@@ -1,0 +1,304 @@
+/* ============================================
+   GLOBAL BUTTON STYLES - Modern Touch-Friendly
+   ============================================ */
+QPushButton {
+    background-color: #2196F3;
+    border: none;
+    border-radius: 15px;
+    color: white;
+    padding: 10px;
+    font-size: 18pt;
+    font-weight: bold;
+    min-height: 40px;
+    min-width: 180px;
+}
+
+QPushButton:pressed {
+    background-color: #0D47A1;
+}
+
+QPushButton:disabled {
+    background-color: #BDBDBD;
+    color: #757575;
+}
+
+/* Exit Button - Red */
+QPushButton#bExit {
+    background-color: #f44336;
+}
+
+QPushButton#bExit:pressed {
+    background-color: #c62828;
+}
+
+/* Back Button - Orange */
+QPushButton#bBack,
+QPushButton#bCancel {
+    background-color: #FF9800;
+}
+
+QPushButton#bBack:pressed,
+QPushButton#bCancel:pressed {
+    background-color: #E65100;
+}
+
+/* Device/Settings Button - Green */
+QPushButton#bDevice,
+QPushButton#bSettings {
+    background-color: #4CAF50;
+}
+
+QPushButton#bDevice:pressed,
+QPushButton#bSettings:pressed {
+    background-color: #2E7D32;
+}
+
+/* Calibration Buttons - Blue (default styling) */
+QPushButton#bCDistortion,
+QPushButton#bCPerspective,
+QPushButton#bCGeometric,
+QPushButton#bCSize,
+QPushButton#bCOffset,
+QPushButton#bCTest {
+    background-color: #2196F3;
+    margin: 5px 0px;  /* Add vertical margin for consistent spacing */
+}
+
+QPushButton#bCDistortion:pressed,
+QPushButton#bCPerspective:pressed,
+QPushButton#bCGeometric:pressed,
+QPushButton#bCSize:pressed,
+QPushButton#bCOffset:pressed,
+QPushButton#bCTest:pressed {
+    background-color: #0D47A1;
+}
+
+/* Device Button - Add margin to match other buttons */
+QPushButton#bDevice {
+    margin: 5px 0px;
+}
+
+/* Setup Buttons (Camera & MCU) - Purple/Violet */
+QPushButton#bCameraSetup,
+QPushButton#bMCUSetup {
+    background-color: #9C27B0;
+}
+
+QPushButton#bCameraSetup:pressed,
+QPushButton#bMCUSetup:pressed {
+    background-color: #6A1B9A;
+}
+
+/* CNC Mode Button - Green */
+QPushButton#bCncMode {
+    background-color: #4CAF50;
+}
+
+QPushButton#bCncMode:pressed {
+    background-color: #2E7D32;
+}
+
+/* OK Button - Green */
+QPushButton#bOk {
+    background-color: #4CAF50;
+}
+
+QPushButton#bOk:pressed {
+    background-color: #2E7D32;
+}
+
+/* Settings Window Buttons - Narrower for more camera space */
+QPushButton#bOk,
+QPushButton#bCancel {
+    min-width: 90px;
+    font-size: 16pt;
+    margin: 5px;
+}
+
+/* ============================================
+   ICON-ONLY BUTTONS - Round Transparent Buttons
+   ============================================ */
+QPushButton#bUndo,
+QPushButton#bSample,
+QPushButton#bStart {
+    background-color: transparent;
+    border: none;
+    border-radius: 32px;
+    min-width: 64px;
+    max-width: 64px;
+    min-height: 64px;
+    max-height: 64px;
+    padding: 0px;
+    margin: 10px;
+}
+
+QPushButton#bUndo:hover,
+QPushButton#bSample:hover,
+QPushButton#bStart:hover {
+    background-color: rgba(0, 0, 0, 0.2);
+}
+
+QPushButton#bUndo:pressed,
+QPushButton#bSample:pressed,
+QPushButton#bStart:pressed {
+    background-color: rgba(0, 0, 0, 0.3);
+}
+
+/* bExit in calibration windows should also be icon-only */
+QWidget[objectName="Form"] QPushButton#bExit {
+    background-color: transparent;
+    border: none;
+    border-radius: 32px;
+    min-width: 64px;
+    max-width: 64px;
+    min-height: 64px;
+    max-height: 64px;
+    padding: 0px;
+    margin: 10px;
+}
+
+QWidget[objectName="Form"] QPushButton#bExit:hover {
+    background-color: rgba(244, 67, 54, 0.2);
+}
+
+QWidget[objectName="Form"] QPushButton#bExit:pressed {
+    background-color: rgba(244, 67, 54, 0.3);
+}
+
+/* ============================================
+   TREEVIEW - Touch-Friendly Settings Tree
+   ============================================ */
+QTreeWidget {
+    outline: 0;
+    border: none;
+    border-radius: 10px;
+    background-color: white;
+    font-size: 18pt;
+    color: black;
+}
+
+QTreeWidget::item {
+    height: 44px;
+    min-height: 44px;
+    max-height: 44px;
+    font-size: 18pt;
+    padding: 8px;
+    border-bottom: 1px solid #d0d0d0;
+    color: black;
+}
+
+QTreeWidget::item:selected {
+    background-color: #4a90e2;
+    color: white;
+}
+
+QTreeWidget::item:hover:!selected {
+    background-color: #e8f4fd;
+}
+
+/* Hide expand/collapse indicators */
+QTreeWidget::branch {
+    background: transparent;
+}
+
+QTreeWidget::branch:has-children:!has-siblings:closed,
+QTreeWidget::branch:closed:has-children:has-siblings {
+    border-image: none;
+    image: none;
+}
+
+QTreeWidget::branch:open:has-children:!has-siblings,
+QTreeWidget::branch:open:has-children:has-siblings {
+    border-image: none;
+    image: none;
+}
+
+/* ============================================
+   SCROLLBAR - Custom Scrollbar for TreeView
+   ============================================ */
+QScrollBar:vertical {
+    border: none;
+    background: #f0f0f0;
+    width: 30px;
+    margin: 0px;
+    border-radius: 5px;
+}
+
+QScrollBar::handle:vertical {
+    background: #4a90e2;
+    min-height: 80px;
+    border-radius: 10px;
+    margin: 2px;
+}
+
+QScrollBar::handle:vertical:hover {
+    background: #357abd;
+}
+
+QScrollBar::add-line:vertical,
+QScrollBar::sub-line:vertical {
+    height: 0px;
+}
+
+/* ============================================
+   COMBOBOX - Touch-Friendly Dropdowns
+   ============================================ */
+QComboBox {
+    font-size: 18pt;
+    padding: 10px;
+    min-height: 40px;
+    border: 1px solid #ccc;
+    border-radius: 5px;
+    background-color: white;
+}
+
+QComboBox::drop-down {
+    width: 40px;
+    border: none;
+}
+
+QComboBox::down-arrow {
+    image: url(none);
+    border-left: 5px solid transparent;
+    border-right: 5px solid transparent;
+    border-top: 8px solid #666;
+    margin-right: 10px;
+}
+
+QComboBox QAbstractItemView {
+    font-size: 18pt;
+    padding: 10px;
+    selection-background-color: #4a90e2;
+    border: 1px solid #ccc;
+}
+
+QComboBox QAbstractItemView::item {
+    min-height: 50px;
+    padding: 10px;
+}
+
+/* ============================================
+   CHECKBOX - Status Indicators
+   ============================================ */
+QCheckBox {
+    font-size: 14pt;
+    spacing: 8px;
+}
+
+QCheckBox::indicator {
+    width: 20px;
+    height: 20px;
+}
+
+/* Status Checkbox Colors - Set via setProperty in code */
+QCheckBox[status="ok"] {
+    color: green;
+}
+
+QCheckBox[status="warning"] {
+    color: orange;
+}
+
+QCheckBox[status="error"] {
+    color: red;
+}

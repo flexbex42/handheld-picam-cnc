@@ -7,7 +7,7 @@ Dann startet es die eigentliche Main App
 import sys
 from PyQt5.QtWidgets import QApplication, QWidget
 from PyQt5.QtCore import QTimer, QThread, pyqtSignal
-from loadingwindow import Ui_Form
+from loadingWin import Ui_Form
 
 
 class LoadingWorker(QThread):

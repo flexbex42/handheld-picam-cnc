@@ -2,8 +2,8 @@
 # Rsync-Script zum Synchronisieren der Dateien auf den Raspberry Pi
 
 PI_USER="flex"
-#PI_HOST="10.193.65.210"
-PI_HOST="192.168.1.194"
+PI_HOST="10.193.65.210"
+#PI_HOST="192.168.1.194"
 PI_PATH="/home/flex/uis/"
 LOCAL_PATH="/home/flex/diy/handheld-picam-cnc/pi/"
 
@@ -16,6 +16,13 @@ fi
 
 echo "=== Sync zu Raspberry Pi ==="
 echo "Ziel: ${PI_USER}@${PI_HOST}:${PI_PATH}"
+echo ""
+
+# Lösche generierte UI-Dateien lokal vor dem Sync
+echo "Lösche lokale generierte UI-Dateien..."
+rm -f "${LOCAL_PATH}"*Win.py
+rm -f "${LOCAL_PATH}"*Dialog.py
+echo "✓ Generierte Dateien gelöscht"
 echo ""
 
 # Rsync mit folgenden Optionen:
@@ -33,9 +40,6 @@ RSYNC_OUTPUT=$(rsync -avzh --itemize-changes \
     --exclude '*.pyc' \
     --exclude '.git' \
     --exclude '*.autosave' \
-    --exclude 'mainwindow.py' \
-    --exclude 'settingswindow.py' \
-    --exclude 'loadingwindow.py' \
     "${LOCAL_PATH}" \
     "${PI_USER}@${PI_HOST}:${PI_PATH}" 2>&1)
 

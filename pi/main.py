@@ -12,9 +12,9 @@ from PyQt5.QtWidgets import QApplication, QMainWindow
 from PyQt5.QtCore import Qt
 
 # Importiere die auto-generierten UIs
-from mainwindow import Ui_MainWindow
+from mainWin import Ui_MainWindow
 from settings import SettingsWindow, load_camera_settings, get_camera_id
-from calibrationselect import CalibrationSelectWindow
+from caliSelect import CalibrationSelectWindow
 
 
 class MainApp(QMainWindow):
@@ -185,7 +185,8 @@ class MainApp(QMainWindow):
             on_back_callback=self.show_main_view,
             on_settings_callback=self.show_settings_view,
             on_distortion_callback=self.show_distortion_calibration_view,
-            on_perspective_callback=self.show_perspective_calibration_view
+            on_perspective_callback=self.show_perspective_calibration_view,
+            on_offset_callback=self.show_offset_calibration_view
         )
         
         # Setze das Widget als Central Widget
@@ -194,7 +195,7 @@ class MainApp(QMainWindow):
     
     def show_distortion_calibration_view(self):
         """Zeige Distortion Calibration View im gleichen Fenster"""
-        from calibrationdistortion import CalibrationDistortionWindow
+        from caliDistortion import CalibrationDistortionWindow
         
         # Erstelle Distortion Calibration Window
         distortion_window = CalibrationDistortionWindow(
@@ -208,7 +209,7 @@ class MainApp(QMainWindow):
     
     def show_perspective_calibration_view(self):
         """Zeige Perspective Calibration View im gleichen Fenster"""
-        from calibrationperspective import CalibrationPerspectiveWindow
+        from caliPerspective import CalibrationPerspectiveWindow
         
         # Erstelle Perspective Calibration Window
         perspective_window = CalibrationPerspectiveWindow()
@@ -218,6 +219,20 @@ class MainApp(QMainWindow):
         # Setze das Widget als Central Widget
         self.setCentralWidget(perspective_window)
         self.setWindowTitle("Perspective Calibration")
+    
+    def show_offset_calibration_view(self):
+        """Zeige Offset Calibration View im gleichen Fenster"""
+        from caliOffset import CalibrationOffsetWindow
+        
+        # Erstelle Offset Calibration Window
+        offset_window = CalibrationOffsetWindow(
+            self,
+            on_back_callback=self.show_calibration_select_view
+        )
+        
+        # Setze das Widget als Central Widget
+        self.setCentralWidget(offset_window)
+        self.setWindowTitle("Offset Calibration")
         
     def on_camera_setup_clicked(self):
         """bCameraSetup: Wechsel zu Calibration Select View"""
@@ -249,5 +264,16 @@ if __name__ == "__main__":
             print(f"[LOG] Loaded stylesheet from {stylesheet_path}")
     
     window = MainApp()
-    window.showFullScreen()  # Vollbild statt normales Fenster
+    
+    # Check für Debug-Modus (Laptop-Entwicklung)
+    debug_mode = os.environ.get('DEBUG_MODE', '0') == '1'
+    
+    if debug_mode:
+        print("[LOG] DEBUG_MODE aktiv - Fenster 640x480, nicht Vollbild")
+        window.setFixedSize(640, 480)
+        window.show()
+    else:
+        print("[LOG] Normal mode - Vollbild")
+        window.showFullScreen()
+    
     sys.exit(app.exec_())

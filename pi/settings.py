@@ -13,7 +13,7 @@ import json
 from PyQt5.QtWidgets import QMainWindow, QGraphicsScene, QGraphicsPixmapItem, QTreeWidgetItem
 from PyQt5.QtCore import QThread, pyqtSignal, Qt
 from PyQt5.QtGui import QImage, QPixmap
-from settingswindow import Ui_MainWindow as Ui_SettingsWindow
+from settingsWin import Ui_MainWindow as Ui_SettingsWindow
 
 
 # Settings File Path
@@ -208,12 +208,9 @@ class SettingsWindow(QMainWindow):
         self.ui.gvCamera.setScene(self.scene)
         
         # Konfiguriere GraphicsView für Vollbildanzeige ohne Scrollbars
-        from PyQt5.QtWidgets import QApplication
-        screen = QApplication.primaryScreen().geometry()
-        
-        # Setze feste Höhe basierend auf Bildschirmgröße (minus etwas Platz für TreeView)
-        # Für 480px Display: 480 - 200 (TreeView+Buttons) = 280px
-        camera_height = screen.height() - 200
+        # Fixe Höhe für Pi Zero 2 W (480px Display)
+        # 480 - 200 (TreeView+Buttons) = 280px
+        camera_height = 280
         self.ui.gvCamera.setMaximumHeight(camera_height)
         self.ui.gvCamera.setMinimumHeight(camera_height)
         

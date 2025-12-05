@@ -7,6 +7,12 @@ echo "=== PyQt5 GUI Test-Start ==="
 if [ "$1" != "--skip-ui-gen" ]; then
     echo "[1/3] Generiere UI-Dateien..."
     
+    # Generiere icons_rc.py aus icons.qrc
+    if [ -f "/home/flex/uis/icons.qrc" ]; then
+        echo "  Kompiliere icons.qrc..."
+        pyrcc5 /home/flex/uis/icons.qrc -o /home/flex/uis/icons_rc.py
+    fi
+    
     # Generiere alle .ui Dateien in einer Schleife
     for ui_file in /home/flex/uis/*.ui; do
         if [ -f "$ui_file" ]; then

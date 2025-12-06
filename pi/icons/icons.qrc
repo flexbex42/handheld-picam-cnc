@@ -1,0 +1,18 @@
+<RCC>
+    <qresource prefix="/icons">
+        <file>offsetXB.png</file>
+        <file>offsetXT.png</file>
+        <file>offsetYL.png</file>
+        <file>offsetYR.png</file>
+        <file>close.png</file>
+        <file>foto.png</file>
+        <file>offsetXTA.png</file>
+        <file>offsetXBA.png</file>
+        <file>offsetYLA.png</file>
+        <file>offsetYRA.png</file>
+        <file>ok.png</file>
+        <file>plus.png</file>
+        <file>minus.png</file>
+        <file>undo.png</file>
+    </qresource>
+</RCC>

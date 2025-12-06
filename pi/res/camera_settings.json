@@ -1,0 +1,26 @@
+{
+    "Chicony_Electronics_Co._Ltd._HD_User_Facing_0001": {
+        "device": 0,
+        "format": "MJPG",
+        "resolution": "640x480",
+        "fps": 30,
+        "calibration": {}
+    },
+    "calibration_settings": {
+        "checkerboard_boxes": {
+            "x": 11,
+            "y": 8
+        },
+        "checkerboard_dim": {
+            "size_mm": 5
+        }
+    },
+    "Etron_Technology__Inc._USB2.0_Camera": {
+        "device": 2,
+        "format": "MJPG",
+        "resolution": "640x480",
+        "fps": 15,
+        "calibration": {}
+    },
+    "selected_camera": "Etron_Technology__Inc._USB2.0_Camera"
+}

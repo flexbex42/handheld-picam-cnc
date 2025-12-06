@@ -13,7 +13,7 @@ from PyQt5.QtCore import Qt
 
 # Importiere die auto-generierten UIs
 from mainWin import Ui_MainWindow
-from caliDevice import SettingsWindow, load_camera_settings, get_camera_id
+from caliDevice import SettingsWindow, load_camera_settings, get_camera_id, get_calibration_settings
 from caliSelect import CalibrationSelectWindow
 
 
@@ -325,8 +325,14 @@ if __name__ == "__main__":
     debug_mode = os.environ.get('DEBUG_MODE', '0') == '1'
     
     if debug_mode:
-        print("[LOG] DEBUG_MODE aktiv - Fenster 640x480, nicht Vollbild")
-        window.setFixedSize(640, 480)
+        # Hole Screen-Größe aus Kalibrierungs-Einstellungen
+        calib_settings = get_calibration_settings()
+        screen_size = calib_settings.get("screen_size", {"width": 640, "height": 480})
+        screen_width = screen_size["width"]
+        screen_height = screen_size["height"]
+        
+        print(f"[LOG] DEBUG_MODE aktiv - Fenster {screen_width}x{screen_height}, nicht Vollbild")
+        window.setFixedSize(screen_width, screen_height)
         window.show()
     else:
         print("[LOG] Normal mode - Vollbild")

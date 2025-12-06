@@ -1,6 +1,28 @@
 # PyQt5 GUI Projekt - Raspberry Pi
 
-## 📁 Projektstruktur
+## � Dependencies / Installation
+
+### System-Pakete installieren
+
+```bash
+sudo apt update && sudo apt install -y \
+  python3-pyqt5 \
+  python3-opencv \
+  python3-numpy \
+  v4l-utils
+```
+
+**Einzelne Pakete:**
+- `python3-pyqt5` - GUI Framework
+- `python3-opencv` - Kamera & Bildverarbeitung (cv2)
+- `python3-numpy` - Numerische Berechnungen für Kalibrierung
+- `v4l-utils` - Video4Linux Tools (enthält v4l2-ctl für Kamera-Capabilities)
+
+**Hinweis:** `udevadm` ist bereits Teil von Raspberry Pi OS (systemd/udev)
+
+---
+
+## �📁 Projektstruktur
 
 ```
 /home/flex/diy/uis/

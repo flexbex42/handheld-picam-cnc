@@ -14,5 +14,6 @@
         <file>plus.png</file>
         <file>minus.png</file>
         <file>undo.png</file>
+        <file>freeze.png</file>
     </qresource>
 </RCC>

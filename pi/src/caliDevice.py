@@ -105,6 +105,10 @@ def get_default_calibration_settings():
         },
         "checkerboard_dim": {
             "size_mm": 5
+        },
+        "screen_size": {
+            "width": 640,
+            "height": 480
         }
     }
 
@@ -383,6 +387,12 @@ class SettingsWindow(QMainWindow):
                     # NICHT global setzen - nur temporär in diesem Fenster!
                     # Wird erst bei OK übernommen
                     
+                    # Schließe alle anderen Äste (Resolution, FPS, Format)
+                    self.resolution_item.setExpanded(False)
+                    self.fps_item.setExpanded(False)
+                    self.format_item.setExpanded(False)
+                    print("[LOG] Collapsed all tree items (Resolution, FPS, Format)")
+                    
                     # Lese Kamera-Capabilities mit v4l2-ctl
                     capabilities = self.get_camera_capabilities(camera_index)
                     self.camera_capabilities = capabilities
@@ -392,6 +402,7 @@ class SettingsWindow(QMainWindow):
                     self.resolution_item.setDisabled(False)
                     self.fps_item.setDisabled(False)
                     self.format_item.setDisabled(False)
+                    print("[LOG] Updated tree items with camera capabilities")
                     
                     # Prüfe ob gespeicherte Settings für diese Kamera existieren
                     if self.current_camera_id in self.saved_settings:
@@ -842,13 +853,39 @@ class SettingsWindow(QMainWindow):
         if not self.current_camera_id:
             return
         
+        # Prüfe ob diese Kamera bereits existiert
+        existing_settings = self.saved_settings.get(self.current_camera_id, {})
+        
+        # Prüfe ob sich kritische Parameter geändert haben (Format, Resolution, FPS)
+        # Wenn ja, muss Kamera neu kalibriert werden
+        format_changed = existing_settings.get('format') != self.current_format
+        resolution_changed = existing_settings.get('resolution') != self.current_resolution
+        fps_changed = existing_settings.get('fps') != int(self.current_fps)
+        
+        critical_change = format_changed or resolution_changed or fps_changed
+        
+        # Entscheide ob Kalibrierung behalten oder gelöscht werden soll
+        if critical_change:
+            # Kritische Parameter haben sich geändert → Kamera muss neu kalibriert werden
+            calibration_data = {}
+            if existing_settings:
+                print(f"[LOG] Critical camera parameters changed - calibration reset required!")
+                print(f"  Format: {existing_settings.get('format')} → {self.current_format} (changed: {format_changed})")
+                print(f"  Resolution: {existing_settings.get('resolution')} → {self.current_resolution} (changed: {resolution_changed})")
+                print(f"  FPS: {existing_settings.get('fps')} → {int(self.current_fps)} (changed: {fps_changed})")
+        else:
+            # Nur Device-Nummer hat sich geändert → Kalibrierung behalten
+            calibration_data = existing_settings.get('calibration', {})
+            if calibration_data:
+                print(f"[LOG] Device number changed, but calibration data preserved")
+        
         # Aktualisiere Settings Dictionary
         self.saved_settings[self.current_camera_id] = {
             'device': self.current_camera_index,
             'format': self.current_format,
             'resolution': self.current_resolution,
             'fps': int(self.current_fps),
-            'calibration': {}  # Platzhalter für später
+            'calibration': calibration_data
         }
         
         # Speichere in Datei

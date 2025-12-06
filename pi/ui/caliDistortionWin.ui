@@ -29,48 +29,6 @@
     </rect>
    </property>
    <layout class="QGridLayout" name="gridLayout">
-    <item row="3" column="0">
-     <widget class="QPushButton" name="bUndo">
-      <property name="minimumSize">
-       <size>
-        <width>64</width>
-        <height>64</height>
-       </size>
-      </property>
-      <property name="maximumSize">
-       <size>
-        <width>64</width>
-        <height>64</height>
-       </size>
-      </property>
-      <property name="text">
-       <string/>
-      </property>
-      <property name="icon">
-       <iconset resource="icons.qrc">
-        <normaloff>:/icons/undo.png</normaloff>:/icons/undo.png</iconset>
-      </property>
-      <property name="iconSize">
-       <size>
-        <width>56</width>
-        <height>56</height>
-       </size>
-      </property>
-     </widget>
-    </item>
-    <item row="2" column="2">
-     <spacer name="verticalSpacer_2">
-      <property name="orientation">
-       <enum>Qt::Vertical</enum>
-      </property>
-      <property name="sizeHint" stdset="0">
-       <size>
-        <width>20</width>
-        <height>40</height>
-       </size>
-      </property>
-     </spacer>
-    </item>
     <item row="0" column="1">
      <spacer name="horizontalSpacer">
       <property name="orientation">
@@ -83,6 +41,23 @@
        </size>
       </property>
      </spacer>
+    </item>
+    <item row="0" column="2" alignment="Qt::AlignRight">
+     <widget class="QLabel" name="lSamples">
+      <property name="font">
+       <font>
+        <pointsize>16</pointsize>
+        <weight>75</weight>
+        <bold>true</bold>
+       </font>
+      </property>
+      <property name="styleSheet">
+       <string notr="true">QLabel { color: orange; font-weight: bold; font-size: 16pt; }</string>
+      </property>
+      <property name="text">
+       <string>0/15</string>
+      </property>
+     </widget>
     </item>
     <item row="0" column="0">
      <widget class="QPushButton" name="bExit">
@@ -102,8 +77,37 @@
        <string/>
       </property>
       <property name="icon">
-       <iconset resource="icons.qrc">
+       <iconset resource="../icons/icons.qrc">
         <normaloff>:/icons/close.png</normaloff>:/icons/close.png</iconset>
+      </property>
+      <property name="iconSize">
+       <size>
+        <width>56</width>
+        <height>56</height>
+       </size>
+      </property>
+     </widget>
+    </item>
+    <item row="3" column="0">
+     <widget class="QPushButton" name="bUndo">
+      <property name="minimumSize">
+       <size>
+        <width>64</width>
+        <height>64</height>
+       </size>
+      </property>
+      <property name="maximumSize">
+       <size>
+        <width>64</width>
+        <height>64</height>
+       </size>
+      </property>
+      <property name="text">
+       <string/>
+      </property>
+      <property name="icon">
+       <iconset resource="../icons/icons.qrc">
+        <normaloff>:/icons/undo.png</normaloff>:/icons/undo.png</iconset>
       </property>
       <property name="iconSize">
        <size>
@@ -144,7 +148,7 @@
        <string/>
       </property>
       <property name="icon">
-       <iconset resource="icons.qrc">
+       <iconset resource="../icons/icons.qrc">
         <normaloff>:/icons/foto.png</normaloff>:/icons/foto.png</iconset>
       </property>
       <property name="iconSize">
@@ -155,12 +159,18 @@
       </property>
      </widget>
     </item>
-    <item row="0" column="2" alignment="Qt::AlignRight">
-     <widget class="QLabel" name="lSamples">
-      <property name="text">
-       <string>0/15</string>
+    <item row="2" column="2">
+     <spacer name="verticalSpacer_2">
+      <property name="orientation">
+       <enum>Qt::Vertical</enum>
       </property>
-     </widget>
+      <property name="sizeHint" stdset="0">
+       <size>
+        <width>20</width>
+        <height>40</height>
+       </size>
+      </property>
+     </spacer>
     </item>
    </layout>
   </widget>

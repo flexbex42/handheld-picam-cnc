@@ -4,7 +4,14 @@
         "format": "MJPG",
         "resolution": "640x480",
         "fps": 30,
-        "calibration": {}
+        "calibration": {
+            "perspective": {
+                "tilt_deg": 9.234181447292801,
+                "yaw_deg": -179.37400880539224,
+                "scale_mm_per_pixel": 0.10023028066038565,
+                "successful_images": 15
+            }
+        }
     },
     "calibration_settings": {
         "checkerboard_boxes": {
@@ -13,14 +20,61 @@
         },
         "checkerboard_dim": {
             "size_mm": 5
+        },
+        "screen_size": {
+            "width": 640,
+            "height": 480
         }
     },
     "Etron_Technology__Inc._USB2.0_Camera": {
         "device": 2,
-        "format": "MJPG",
+        "format": "YUYV",
         "resolution": "640x480",
-        "fps": 15,
-        "calibration": {}
+        "fps": 30,
+        "calibration": {
+            "geometric": {
+                "camera_matrix": [
+                    [
+                        975.0149797218825,
+                        0.0,
+                        295.8936599864796
+                    ],
+                    [
+                        0.0,
+                        972.2017862245037,
+                        220.74825437826956
+                    ],
+                    [
+                        0.0,
+                        0.0,
+                        1.0
+                    ]
+                ],
+                "dist_coeffs": [
+                    [
+                        0.1531496165102873,
+                        0.9832816654838732,
+                        -3.0327553161728865e-05,
+                        -0.013167985746837797,
+                        -14.924412777468719
+                    ]
+                ],
+                "reprojection_error": 0.07775309028955273,
+                "checkerboard_size": [
+                    10,
+                    7
+                ],
+                "num_images": 15
+            },
+            "perspective": {
+                "tilt_deg": -9.39026947452172,
+                "yaw_deg": 2.18535221978334,
+                "scale_mm_per_pixel": 0.10119067654898042,
+                "successful_images": 15,
+                "translate_x": 20,
+                "translate_y": 51
+            }
+        }
     },
     "selected_camera": "Etron_Technology__Inc._USB2.0_Camera"
 }

@@ -16,6 +16,7 @@ from PyQt5.QtGui import QImage, QPixmap
 from caliDistortionWin import Ui_Form as Ui_CalibrationDistortionWindow
 from caliDialog import Ui_CalibrationDialog
 from caliDevice import load_camera_settings, get_camera_id, save_camera_settings, get_calibration_settings
+from camera import Camera
 
 
 class ProcessingThread(QThread):
@@ -186,7 +187,7 @@ class CalibrationDistortionWindow(QWidget):
         self.timer = None
         
         # Kalibrierungs-Daten
-        self.sample_dir = os.path.join(os.path.dirname(__file__), "..", "sample") #"/home/flex/uis/sample"
+        self.sample_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "sample"))
         self.max_samples = 15
         self.current_sample = 0
         
@@ -229,7 +230,20 @@ class CalibrationDistortionWindow(QWidget):
         # Setup UI
         self.setup_ui()
         self.setup_connections()
-        self.init_camera()
+        
+        # Initialisiere Kamera mit Camera-Klasse
+        self.camera = Camera()
+        if self.camera.open():
+            self.camera_id = self.camera.get_camera_id()
+            self.camera_settings = self.camera.get_camera_settings()
+            print(f"[LOG] Camera initialized: {self.camera_id}")
+            
+            # Starte Video-Timer
+            self.timer = QTimer(self)
+            self.timer.timeout.connect(self.update_frame)
+            self.timer.start(33)  # ~30 FPS
+        else:
+            print("[ERROR] Failed to open camera!")
         
         # DEBUG: Zeige Dialog sofort
         if self.DEBUG_SHOW_DIALOG:
@@ -251,8 +265,13 @@ class CalibrationDistortionWindow(QWidget):
         
     def setup_ui(self):
         """Initialisiere UI-Elemente"""
-        # Fixe Größe für Pi Zero 2 W (640x480)
-        print(f"[DEBUG] Using fixed screen size: 640x480")
+        # Hole Screen-Größe aus Kalibrierungs-Einstellungen
+        calib_settings = get_calibration_settings()
+        screen_size = calib_settings.get("screen_size", {"width": 640, "height": 480})
+        screen_width = screen_size["width"]
+        screen_height = screen_size["height"]
+        
+        print(f"[DEBUG] Using screen size from settings: {screen_width}x{screen_height}")
         print(f"[DEBUG] GraphicsView current size: {self.ui.gvCamera.width()}x{self.ui.gvCamera.height()}")
         
         # Erstelle QGraphicsScene für GraphicsView
@@ -311,82 +330,13 @@ class CalibrationDistortionWindow(QWidget):
         self.ui.bSample.clicked.connect(self.on_sample_clicked)
         self.ui.bUndo.clicked.connect(self.on_undo_clicked)
         
-    def init_camera(self):
-        """Initialisiere Kamera mit gespeicherten Settings"""
-        # Lade Kamera-Settings
-        from caliDevice import get_selected_camera
-        saved_settings = load_camera_settings()
-        
-        # Prüfe ob eine Kamera ausgewählt wurde
-        selected_index, selected_id = get_selected_camera()
-        
-        camera_found = False
-        if selected_index is not None and selected_id is not None:
-            # Nutze ausgewählte Kamera
-            print(f"[LOG] Using selected camera: index={selected_index}, id={selected_id}")
-            self.camera_id = selected_id
-            self.camera_settings = saved_settings.get(selected_id, {})
-            
-            # Öffne Kamera mit V4L2 Backend (wichtig für Linux)
-            self.camera = cv2.VideoCapture(selected_index, cv2.CAP_V4L2)
-            camera_found = True
-        else:
-            # Fallback: Finde erste angeschlossene Kamera mit Settings
-            print("[LOG] No camera selected, using first available camera with settings")
-            for i in range(10):
-                video_path = f"/dev/video{i}"
-                if os.path.exists(video_path):
-                    camera_id = get_camera_id(i)
-                    if camera_id in saved_settings:
-                        self.camera_id = camera_id
-                        self.camera_settings = saved_settings[camera_id]
-                        
-                        # Öffne Kamera mit V4L2 Backend (wichtig für Linux)
-                        self.camera = cv2.VideoCapture(i, cv2.CAP_V4L2)
-                        camera_found = True
-                        break
-        
-        # Setze Kamera-Parameter (falls Kamera geöffnet wurde)
-        if camera_found and self.camera and self.camera.isOpened():
-            print(f"[DEBUG] Camera opened successfully: {self.camera.isOpened()}")
-            
-            # Setze Kamera-Parameter
-            fourcc_str = self.camera_settings.get("format", "MJPEG")
-            fourcc = cv2.VideoWriter_fourcc(*fourcc_str)
-            self.camera.set(cv2.CAP_PROP_FOURCC, fourcc)
-            
-            res = self.camera_settings.get("resolution", "640x480")
-            width, height = map(int, res.split('x'))
-            self.camera.set(cv2.CAP_PROP_FRAME_WIDTH, width)
-            self.camera.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
-            
-            fps = self.camera_settings.get("fps", 30)
-            self.camera.set(cv2.CAP_PROP_FPS, fps)
-            
-            print(f"[LOG] Camera initialized: {self.camera_id}")
-            print(f"[DEBUG] Camera resolution: {width}x{height}")
-            
-            # Setze GraphicsView auf fixe Größe (640x480)
-            screen_width = 640
-            screen_height = 480
-            
-            print(f"[DEBUG] Setting GraphicsView to fixed size: {screen_width}x{screen_height}")
-            self.ui.gvCamera.setFixedSize(screen_width, screen_height)
-            
-            # Starte Video-Timer
-            self.timer = QTimer(self)
-            self.timer.timeout.connect(self.update_frame)
-            self.timer.start(33)  # ~30 FPS
-        else:
-            print("[ERROR] No camera found or could not open camera!")
-            
     def update_frame(self):
         """Aktualisiere Kamera-Bild"""
-        if self.camera is None:
+        if self.camera is None or not self.camera.is_opened():
             return
             
         ret, frame = self.camera.read()
-        if not ret:
+        if not ret or frame is None:
             return
         
         # Konvertiere BGR zu RGB für Anzeige

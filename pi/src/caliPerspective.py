@@ -19,6 +19,7 @@ from PyQt5.QtGui import QImage, QPixmap
 from caliPerspectiveWin import Ui_Form as Ui_CalibrationPerspectiveWindow
 from caliDialog import Ui_CalibrationDialog
 from caliDevice import load_camera_settings, get_camera_id, save_camera_settings, get_calibration_settings
+from camera import Camera
 
 
 # Debug-Modus: Dialog sofort anzeigen für Testing
@@ -89,8 +90,10 @@ class ProcessingThread(QThread):
                 print(f"[DEBUG] Image undistorted using camera matrix and dist coeffs")
                 
                 gray = cv2.cvtColor(img_undistorted, cv2.COLOR_BGR2GRAY)
+                # ensure contiguous uint8 array for OpenCV native calls
+                gray = np.ascontiguousarray(gray, dtype=np.uint8)
                 print(f"[DEBUG] Gray image: shape={gray.shape}, dtype={gray.dtype}")
-                
+
                 # Versuche verschiedene Checkerboard-Größen
                 found = False
                 found_size = None
@@ -103,31 +106,38 @@ class ProcessingThread(QThread):
                     sizes_to_try.insert(0, self.detected_checkerboard_size)
                 
                 for size in sizes_to_try:
-                    print(f"[DEBUG] Trying checkerboard size: {size}")
-                    ret, corners = cv2.findChessboardCorners(
-                        gray,
-                        size,
-                        flags=cv2.CALIB_CB_ADAPTIVE_THRESH + cv2.CALIB_CB_NORMALIZE_IMAGE
-                    )
-                    
-                    if ret:
-                        print(f"[SUCCESS] Checkerboard found with size {size}! Refining corners...")
-                        found = True
-                        found_size = size
-                        
-                        # Verfeinere Ecken
-                        criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 30, 0.001)
-                        corners2 = cv2.cornerSubPix(gray, corners, (11, 11), (-1, -1), criteria)
-                        found_corners = corners2
-                        
-                        # Speichere erkannte Größe für nächste Iteration
-                        if not self.detected_checkerboard_size:
-                            self.detected_checkerboard_size = size
-                            print(f"[INFO] Auto-detected checkerboard size: {size}")
-                        
-                        break
-                    else:
-                        print(f"[DEBUG] Size {size} failed")
+                    try:
+                        print(f"[DEBUG] Trying checkerboard size: {size}")
+                        # defensive: ensure pattern is tuple of ints
+                        pattern_tuple = (int(size[0]), int(size[1]))
+                        ret, corners = cv2.findChessboardCorners(gray, pattern_tuple,
+                                                                flags=cv2.CALIB_CB_ADAPTIVE_THRESH + cv2.CALIB_CB_NORMALIZE_IMAGE)
+                        if ret and corners is not None:
+                            print(f"[SUCCESS] Checkerboard found with size {size}! Refining corners...")
+                            found = True
+                            found_size = size
+
+                            # Verfeinere Ecken
+                            try:
+                                criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 30, 0.001)
+                                # ensure corners are correct dtype/shape
+                                corners2 = cv2.cornerSubPix(gray, corners, (11, 11), (-1, -1), criteria)
+                                found_corners = corners2
+                            except Exception as e:
+                                print(f"[WARN] cornerSubPix failed: {e}")
+                                found_corners = corners
+
+                            # Speichere erkannte Größe für nächste Iteration
+                            if not self.detected_checkerboard_size:
+                                self.detected_checkerboard_size = size
+                                print(f"[INFO] Auto-detected checkerboard size: {size}")
+
+                            break
+                        else:
+                            print(f"[DEBUG] Size {size} failed (ret={ret})")
+                    except Exception as e:
+                        print(f"[WARN] findChessboardCorners raised exception for size {size}: {e}")
+                        # continue to next size
                 
                 if found:
                     # Wenn die Größe sich ändert, passe objp an
@@ -159,7 +169,14 @@ class ProcessingThread(QThread):
             tvecs_list = []
             
             for obj_pts, img_pts in zip(objpoints, imgpoints):
-                success, rvec, tvec = cv2.solvePnP(obj_pts, img_pts, self.camera_matrix, None)
+                # ensure correct contiguous dtypes to avoid native crashes
+                obj_pts_np = np.ascontiguousarray(np.array(obj_pts, dtype=np.float32))
+                img_pts_np = np.ascontiguousarray(np.array(img_pts, dtype=np.float32))
+                try:
+                    success, rvec, tvec = cv2.solvePnP(obj_pts_np, img_pts_np, self.camera_matrix, None)
+                except Exception as e:
+                    print(f"[WARN] solvePnP raised exception: {e}")
+                    success = False
                 if success:
                     rvecs_list.append(rvec)
                     tvecs_list.append(tvec)
@@ -236,7 +253,9 @@ class CalibrationPerspectiveWindow(QWidget):
         # Kalibrierungs-Variablen
         self.sample_count = 0
         self.max_samples = 15
-        self.sample_dir = "/home/flex/uis/sample"
+        # sample directory should be relative to the pi package so it works on
+        # laptop and Raspberry Pi setups. Use pi/sample next to this file.
+        self.sample_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'sample'))
         self.detected_checkerboard_size = None  # Automatisch erkannte Größe
         self.square_size = 5  # Default: 5mm, wird aus Config gelesen
         
@@ -288,45 +307,71 @@ class CalibrationPerspectiveWindow(QWidget):
     
     def load_distortion_coefficients(self):
         """Lade Distortion-Koeffizienten aus JSON"""
-        # Lade Kamera-Settings
+        # Prefer using the central Camera helper (same logic as caliDistortion)
+        try:
+            cam = Camera()
+            if cam.open():
+                cam_id = cam.get_camera_id()
+                cam_settings = cam.get_camera_settings() or {}
+                # Camera._apply_settings already printed init info
+                geom = cam_settings.get('calibration', {}).get('geometric', {})
+                camera_matrix_list = geom.get('camera_matrix')
+                dist_coeffs_list = geom.get('dist_coeffs')
+
+                if camera_matrix_list is not None and dist_coeffs_list is not None:
+                    self.camera_matrix = np.array(camera_matrix_list)
+                    self.dist_coeffs = np.array(dist_coeffs_list)
+                    print(f"[INFO] Loaded distortion coefficients from Camera wrapper for {cam_id}")
+                    print(f"  Camera matrix: {self.camera_matrix}")
+                    print(f"  Dist coeffs: {self.dist_coeffs}")
+                    return True
+                else:
+                    print(f"[WARNING] Camera wrapper opened {cam_id} but no geometric calibration found in settings")
+            else:
+                print("[WARNING] Camera wrapper could not open a camera, falling back to settings scan")
+        except Exception as e:
+            print(f"[WARN] Camera wrapper failed: {e}")
+
+        # Fallback: Lade direkt aus saved settings (legacy behavior)
         saved_settings = load_camera_settings()
-        
-        # Finde erste angeschlossene Kamera mit Settings
-        camera_id = None
-        for i in range(10):
-            video_path = f"/dev/video{i}"
-            if os.path.exists(video_path):
-                cam_id = get_camera_id(i)
-                if cam_id in saved_settings:
-                    camera_id = cam_id
-                    break
-        
+        # Prefer selected_camera from settings file
+        camera_id = saved_settings.get('selected_camera')
         if not camera_id:
-            print("[ERROR] No camera ID found")
+            # scan /dev/video* for a matching camera id in settings
+            for i in range(10):
+                video_path = f"/dev/video{i}"
+                if os.path.exists(video_path):
+                    cam_id = get_camera_id(i)
+                    if cam_id in saved_settings:
+                        camera_id = cam_id
+                        break
+
+        if not camera_id:
+            print("[ERROR] No camera ID found in settings")
             return False
-        
-        settings = saved_settings[camera_id]
+
+        settings = saved_settings.get(camera_id, {})
         if not settings:
-            print("[ERROR] No camera settings found")
+            print("[ERROR] No camera settings found for camera_id")
             return False
-        
+
         calibration = settings.get("calibration", {})
         geometric = calibration.get("geometric", {})
-        
+
         camera_matrix_list = geometric.get("camera_matrix")
         dist_coeffs_list = geometric.get("dist_coeffs")
-        
+
         if not camera_matrix_list or not dist_coeffs_list:
-            print("[ERROR] No distortion coefficients found")
+            print("[ERROR] No distortion coefficients found in settings")
             return False
-        
+
         self.camera_matrix = np.array(camera_matrix_list)
         self.dist_coeffs = np.array(dist_coeffs_list)
-        
-        print(f"[INFO] Loaded distortion coefficients:")
+
+        print(f"[INFO] Loaded distortion coefficients from settings for {camera_id}")
         print(f"  Camera matrix: {self.camera_matrix}")
         print(f"  Dist coeffs: {self.dist_coeffs}")
-        
+
         return True
     
     def cleanup(self):
@@ -518,16 +563,21 @@ class CalibrationPerspectiveWindow(QWidget):
             # Speichere Ergebnisse
             # Lade Kamera-Settings
             saved_settings = load_camera_settings()
-            
-            # Finde erste angeschlossene Kamera mit Settings
-            camera_id = None
-            for i in range(10):
-                video_path = f"/dev/video{i}"
-                if os.path.exists(video_path):
-                    cam_id = get_camera_id(i)
-                    if cam_id in saved_settings:
-                        camera_id = cam_id
-                        break
+
+            # Prefer the explicitly selected camera in settings (selected_camera)
+            # This avoids scanning /dev/video* and ensures we operate on the
+            # currently active camera chosen in the Settings UI.
+            camera_id = saved_settings.get('selected_camera')
+
+            # Fallback for legacy setups: scan /dev/video* for a camera that has settings
+            if not camera_id:
+                for i in range(10):
+                    video_path = f"/dev/video{i}"
+                    if os.path.exists(video_path):
+                        cam_id = get_camera_id(i)
+                        if cam_id in saved_settings:
+                            camera_id = cam_id
+                            break
             
             if camera_id:
                 # Stelle sicher dass Calibration-Dict existiert
@@ -535,13 +585,107 @@ class CalibrationPerspectiveWindow(QWidget):
                     saved_settings[camera_id]["calibration"] = {}
                 
                 # Speichere Perspective-Daten
+                # store tilt as negated and yaw shifted by +180° per new convention
+                stored_tilt = float(-tilt_deg)
+                stored_yaw = float(yaw_deg + 180.0)
+
+                # Determine image size: try camera resolution, then global calibration screen size, fallback to 640x480
+                res_str = saved_settings.get(camera_id, {}).get('resolution')
+                if res_str and isinstance(res_str, str) and 'x' in res_str:
+                    try:
+                        w_str, h_str = res_str.split('x')
+                        w_img = int(w_str)
+                        h_img = int(h_str)
+                    except Exception:
+                        w_img, h_img = 640, 480
+                else:
+                    screen = saved_settings.get('calibration_settings', {}).get('screen_size', {})
+                    w_img = int(screen.get('width', 640))
+                    h_img = int(screen.get('height', 480))
+
+                # Get camera_matrix (use geometric if available, else self.camera_matrix)
+                cam_geom = saved_settings.get(camera_id, {}).get('calibration', {}).get('geometric', {})
+                cam_mat = None
+                if cam_geom and cam_geom.get('camera_matrix'):
+                    cam_mat = np.array(cam_geom.get('camera_matrix'), dtype=np.float64)
+                elif self.camera_matrix is not None:
+                    cam_mat = np.array(self.camera_matrix, dtype=np.float64)
+
+                translate_x = 0
+                translate_y = 0
+                pad = 20
+
+                # Compute minimal translation to make projected corners visible
+                try:
+                    if cam_mat is not None:
+                        # Build rotation from stored tilt/yaw (use same convention as rectify)
+                        def build_rotation(tilt_d, yaw_d):
+                            tr = np.deg2rad(tilt_d)
+                            yr = np.deg2rad(yaw_d)
+                            ct = np.cos(tr)
+                            st = np.sin(tr)
+                            cy = np.cos(yr)
+                            sy = np.sin(yr)
+                            col0 = np.array([ct * cy, ct * sy, -st], dtype=np.float64)
+                            cand_col1_a = np.array([-sy, cy, 0.0], dtype=np.float64)
+                            cand_col1_b = np.array([sy, -cy, 0.0], dtype=np.float64)
+
+                            def build_R(col1):
+                                col1n = col1 / (np.linalg.norm(col1) + 1e-12)
+                                col2 = np.cross(col0, col1n)
+                                R = np.column_stack((col0, col1n, col2))
+                                U, _, Vt = np.linalg.svd(R)
+                                return U @ Vt
+
+                            R_a = build_R(cand_col1_a)
+                            R_b = build_R(cand_col1_b)
+                            z_a = np.arctan2(R_a[1, 0], R_a[0, 0])
+                            z_b = np.arctan2(R_b[1, 0], R_b[0, 0])
+                            chosen = R_a if abs(z_a) <= abs(z_b) else R_b
+                            return chosen
+
+                        R_recon = build_rotation(stored_tilt, stored_yaw)
+
+                        fx = cam_mat[0, 0]
+                        fy = cam_mat[1, 1]
+                        cx = cam_mat[0, 2]
+                        cy = cam_mat[1, 2]
+
+                        src_corners = np.array([[0.0, 0.0], [w_img - 1.0, 0.0], [w_img - 1.0, h_img - 1.0], [0.0, h_img - 1.0]], dtype=np.float64)
+                        dst = []
+                        R_inv = R_recon.T
+                        for (u, v) in src_corners:
+                            x = (u - cx) / fx
+                            y = (v - cy) / fy
+                            vec = np.array([x, y, 1.0], dtype=np.float64)
+                            vec_rot = R_inv @ vec
+                            if abs(vec_rot[2]) < 1e-9:
+                                u2 = cx
+                                v2 = cy
+                            else:
+                                u2 = fx * (vec_rot[0] / vec_rot[2]) + cx
+                                v2 = fy * (vec_rot[1] / vec_rot[2]) + cy
+                            dst.append([u2, v2])
+                        dst = np.array(dst, dtype=np.float64)
+                        min_xy = dst.min(axis=0)
+                        min_x, min_y = min_xy[0], min_xy[1]
+
+                        off_x = int(max(0, -np.floor(min_x)) + pad)
+                        off_y = int(max(0, -np.floor(min_y)) + pad)
+                        translate_x = off_x
+                        translate_y = off_y
+                except Exception as e:
+                    print(f"[WARNING] Failed to compute translate_x/translate_y automatically: {e}")
+
                 saved_settings[camera_id]["calibration"]["perspective"] = {
-                    "tilt_deg": float(tilt_deg),
-                    "yaw_deg": float(yaw_deg),
+                    "tilt_deg": stored_tilt,
+                    "yaw_deg": stored_yaw,
                     "scale_mm_per_pixel": float(scale_mm_per_pixel),
-                    "successful_images": successful_count
+                    "successful_images": successful_count,
+                    "translate_x": int(translate_x),
+                    "translate_y": int(translate_y)
                 }
-                
+
                 # Speichere zu Datei
                 save_camera_settings(saved_settings)
                 print(f"[SUCCESS] Perspective calibration saved")

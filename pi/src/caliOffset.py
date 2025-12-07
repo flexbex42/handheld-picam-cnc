@@ -266,10 +266,21 @@ class CalibrationOffsetWindow(QWidget):
                     ty = int(pers.get('translate_y', 0)) if pers else 0
 
                     if tx != 0 or ty != 0:
+                        # Ensure stored translate is sufficient to make projected dst inside canvas.
+                        dst_arr = target  # target are the desired corner grid positions
+                        min_xy = dst_arr.min(axis=0)
+                        min_x, min_y = float(min_xy[0]), float(min_xy[1])
+                        pad_local = 10
+                        req_tx = int(max(0, -np.floor(min_x)) + pad_local)
+                        req_ty = int(max(0, -np.floor(min_y)) + pad_local)
+                        final_tx = max(tx, req_tx)
+                        final_ty = max(ty, req_ty)
+                        print(f"[DEBUG] checkerboard translate: stored=({tx},{ty}), required=({req_tx},{req_ty}), using=({final_tx},{final_ty})")
+
                         dst_max = np.array([[x_max, y_max]])
-                        new_w = int(np.ceil(max(w, x_max + tx + 10)))
-                        new_h = int(np.ceil(max(h, y_max + ty + 10)))
-                        T = np.array([[1.0, 0.0, tx], [0.0, 1.0, ty], [0.0, 0.0, 1.0]], dtype=np.float64)
+                        new_w = int(np.ceil(max(w, x_max + final_tx + 10)))
+                        new_h = int(np.ceil(max(h, y_max + final_ty + 10)))
+                        T = np.array([[1.0, 0.0, final_tx], [0.0, 1.0, final_ty], [0.0, 0.0, 1.0]], dtype=np.float64)
                         H_t = T @ H
                         undist = cv2.warpPerspective(undist, H_t, (new_w, new_h), flags=cv2.INTER_LINEAR)
                     else:
@@ -342,11 +353,20 @@ class CalibrationOffsetWindow(QWidget):
 
                 if tx != 0 or ty != 0:
                     # compute bounding box of dst_corners to size canvas
+                    min_xy = dst_corners.min(axis=0)
+                    min_x, min_y = float(min_xy[0]), float(min_xy[1])
                     max_xy = dst_corners.max(axis=0)
                     max_x, max_y = float(max_xy[0]), float(max_xy[1])
-                    new_w = int(np.ceil(max(w, max_x + tx + 10)))
-                    new_h = int(np.ceil(max(h, max_y + ty + 10)))
-                    T = np.array([[1.0, 0.0, tx], [0.0, 1.0, ty], [0.0, 0.0, 1.0]], dtype=np.float64)
+                    pad_local = 10
+                    req_tx = int(max(0, -np.floor(min_x)) + pad_local)
+                    req_ty = int(max(0, -np.floor(min_y)) + pad_local)
+                    final_tx = max(tx, req_tx)
+                    final_ty = max(ty, req_ty)
+                    print(f"[DEBUG] tiltyaw translate: stored=({tx},{ty}), required=({req_tx},{req_ty}), using=({final_tx},{final_ty})")
+
+                    new_w = int(np.ceil(max(w, max_x + final_tx + 10)))
+                    new_h = int(np.ceil(max(h, max_y + final_ty + 10)))
+                    T = np.array([[1.0, 0.0, final_tx], [0.0, 1.0, final_ty], [0.0, 0.0, 1.0]], dtype=np.float64)
                     H_t = T @ H
                     undist = cv2.warpPerspective(undist, H_t, (new_w, new_h), flags=cv2.INTER_LINEAR)
                 else:
@@ -380,8 +400,45 @@ class CalibrationOffsetWindow(QWidget):
                 out_path = os.path.join(sample_dir, 'testimage_rectified.png')
                 cv2.imwrite(out_path, undist)
                 print(f"[LOG] Saved rectified sample to: {out_path}")
+
+                # Prefer using the saved file for display so tools read the exact output
+                try:
+                    loaded = cv2.imread(out_path)
+                    if loaded is not None:
+                        undist = loaded
+                        print(f"[LOG] Loaded rectified sample from disk for display: {out_path}")
+                    else:
+                        print(f"[WARN] Saved rectified file could not be reloaded: {out_path}")
+                except Exception as _e2:
+                    print(f"[WARN] Failed to reload rectified sample: {_e2}")
             except Exception as _e:
                 print(f"[WARN] Could not save rectified sample: {_e}")
+
+            # Heuristic: if left half of the rectified image is mostly empty/black,
+            # shift the image further left so content becomes visible.
+            try:
+                gray_check = cv2.cvtColor(undist, cv2.COLOR_BGR2GRAY)
+                h_ud, w_ud = gray_check.shape[:2]
+                # Count non-black pixels per column
+                col_nonzero = (gray_check > 10).sum(axis=0)
+                left_half = col_nonzero[:w_ud//2]
+                left_frac = (left_half > 0).sum() / float(len(left_half)) if len(left_half) > 0 else 1.0
+                if left_frac < 0.15:
+                    # content is shifted to the right; shift left by extra pixels
+                    extra = max(50, w_ud // 3)
+                    new_w = w_ud + extra
+                    T2 = np.array([[1.0, 0.0, -extra], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]], dtype=np.float64)
+                    undist_shifted = cv2.warpPerspective(undist, T2, (new_w, h_ud), flags=cv2.INTER_LINEAR)
+                    undist = undist_shifted
+                    print(f"[DEBUG] Auto-shifted rectified image left by {extra} pixels due to empty left-half (frac={left_frac:.3f})")
+                    # overwrite saved file so tools see the shifted version
+                    try:
+                        cv2.imwrite(out_path, undist)
+                        print(f"[LOG] Overwrote rectified sample with left-shifted version: {out_path}")
+                    except Exception as _e3:
+                        print(f"[WARN] Failed to overwrite rectified sample: {_e3}")
+            except Exception as _e_check:
+                print(f"[WARN] Auto-shift heuristic failed: {_e_check}")
 
             frame_rgb = cv2.cvtColor(undist, cv2.COLOR_BGR2RGB)
             h, w, ch = frame_rgb.shape
@@ -798,8 +855,48 @@ class CalibrationOffsetWindow(QWidget):
 
                 # Compute homography that maps original image to the rectified view
                 H = cv2.getPerspectiveTransform(src_corners, dst_corners)
-                # Warp using same output size
-                undist = cv2.warpPerspective(undist, H, (w, h), flags=cv2.INTER_LINEAR)
+                
+                # Apply stored translate_x/translate_y to avoid clipping
+                tx = int(pers.get('translate_x', 0)) if pers else 0
+                ty = int(pers.get('translate_y', 0)) if pers else 0
+                
+                # Compute required translate from dst_corners min to ensure no negative coords
+                min_xy = dst_corners.min(axis=0)
+                min_x, min_y = float(min_xy[0]), float(min_xy[1])
+                max_xy = dst_corners.max(axis=0)
+                max_x, max_y = float(max_xy[0]), float(max_xy[1])
+                
+                # Use minimal padding (just 1 pixel to avoid edge issues)
+                pad_local = 1
+                req_tx = int(max(0, -np.floor(min_x)) + pad_local)
+                req_ty = int(max(0, -np.floor(min_y)) + pad_local)
+                
+                # Don't use stored translate, compute fresh minimal values
+                final_tx = req_tx
+                final_ty = req_ty
+                
+                print(f"[DEBUG] tiltyaw translate: min_xy=({min_x:.1f},{min_y:.1f}), using translate=({final_tx},{final_ty})")
+                
+                if final_tx != 0 or final_ty != 0:
+                    # Build translation matrix and compose with homography
+                    new_w = int(np.ceil(max(w, max_x + final_tx + 10)))
+                    new_h = int(np.ceil(max(h, max_y + final_ty + 10)))
+                    T = np.array([[1.0, 0.0, final_tx], [0.0, 1.0, final_ty], [0.0, 0.0, 1.0]], dtype=np.float64)
+                    H_t = T @ H
+                    undist = cv2.warpPerspective(undist, H_t, (new_w, new_h), flags=cv2.INTER_LINEAR)
+                    
+                    # Crop back to original dimensions (640x480)
+                    # Compute optimal crop offset: where the original (0,0) corner ended up after translation
+                    # After rotation, corner (0,0) is at dst_corners[0], after translation it's at dst_corners[0] + (tx,ty)
+                    corner_0_after_trans = dst_corners[0] + np.array([final_tx, final_ty], dtype=np.float32)
+                    crop_x = int(np.round(corner_0_after_trans[0]))
+                    crop_y = int(np.round(corner_0_after_trans[1]))
+                    crop_w = min(w, new_w - crop_x)
+                    crop_h = min(h, new_h - crop_y)
+                    undist = undist[crop_y:crop_y+crop_h, crop_x:crop_x+crop_w]
+                    print(f"[DEBUG] Cropped rectified image from ({new_w}x{new_h}) to ({undist.shape[1]}x{undist.shape[0]}) starting at ({crop_x},{crop_y})")
+                else:
+                    undist = cv2.warpPerspective(undist, H, (w, h), flags=cv2.INTER_LINEAR)
             else:
                 print("[LOG] No perspective calibration or camera matrix found - skipping perspective correction")
         except Exception as e:
@@ -808,6 +905,27 @@ class CalibrationOffsetWindow(QWidget):
 
         # Convert to QPixmap and show in scene (replace live feed)
         try:
+            # Save rectified output so it's persisted for tools and inspection
+            try:
+                sample_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'sample'))
+                os.makedirs(sample_dir, exist_ok=True)
+                out_path = os.path.join(sample_dir, 'testimage_rectified.png')
+                cv2.imwrite(out_path, undist)
+                print(f"[LOG] Saved rectified sample to: {out_path}")
+
+                # reload to ensure displayed image matches file
+                try:
+                    loaded = cv2.imread(out_path)
+                    if loaded is not None:
+                        undist = loaded
+                        print(f"[LOG] Loaded rectified sample from disk for display: {out_path}")
+                    else:
+                        print(f"[WARN] Saved rectified file could not be reloaded: {out_path}")
+                except Exception as _e2:
+                    print(f"[WARN] Failed to reload rectified sample: {_e2}")
+            except Exception as _e:
+                print(f"[WARN] Could not save rectified sample: {_e}")
+
             frame_rgb = cv2.cvtColor(undist, cv2.COLOR_BGR2RGB)
             h, w, ch = frame_rgb.shape
             bytes_per_line = ch * w

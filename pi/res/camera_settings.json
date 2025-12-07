@@ -67,12 +67,12 @@
                 "num_images": 15
             },
             "perspective": {
-                "tilt_deg": -9.39026947452172,
-                "yaw_deg": 2.18535221978334,
-                "scale_mm_per_pixel": 0.10119067654898042,
+                "tilt_deg": -8.910214249606698,
+                "yaw_deg": 2.1864888488170777,
+                "scale_mm_per_pixel": 0.10121616623074957,
                 "successful_images": 15,
                 "translate_x": 20,
-                "translate_y": 51
+                "translate_y": 50
             }
         }
     },

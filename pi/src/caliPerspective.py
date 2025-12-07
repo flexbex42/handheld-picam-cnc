@@ -588,6 +588,7 @@ class CalibrationPerspectiveWindow(QWidget):
                 # store tilt as negated and yaw shifted by +180° per new convention
                 stored_tilt = float(-tilt_deg)
                 stored_yaw = float(yaw_deg + 180.0)
+                print(f"[DEBUG] Perspective save: raw tilt={tilt_deg:.2f}°, yaw={yaw_deg:.2f}° → stored tilt={stored_tilt:.2f}°, yaw={stored_yaw:.2f}°")
 
                 # Determine image size: try camera resolution, then global calibration screen size, fallback to 640x480
                 res_str = saved_settings.get(camera_id, {}).get('resolution')
@@ -610,6 +611,10 @@ class CalibrationPerspectiveWindow(QWidget):
                     cam_mat = np.array(cam_geom.get('camera_matrix'), dtype=np.float64)
                 elif self.camera_matrix is not None:
                     cam_mat = np.array(self.camera_matrix, dtype=np.float64)
+                
+                print(f"[DEBUG] Camera matrix for translate calc: {'LOADED' if cam_mat is not None else 'MISSING'}")
+                if cam_mat is not None:
+                    print(f"[DEBUG] Camera matrix fx={cam_mat[0,0]:.2f}, fy={cam_mat[1,1]:.2f}, cx={cam_mat[0,2]:.2f}, cy={cam_mat[1,2]:.2f}")
 
                 translate_x = 0
                 translate_y = 0
@@ -674,8 +679,12 @@ class CalibrationPerspectiveWindow(QWidget):
                         off_y = int(max(0, -np.floor(min_y)) + pad)
                         translate_x = off_x
                         translate_y = off_y
+                        print(f"[DEBUG] Computed translate from perspective: min_x={min_x:.2f}, min_y={min_y:.2f}, translate_x={translate_x}, translate_y={translate_y}")
+                        print(f"[DEBUG] Used stored_tilt={stored_tilt:.2f}, stored_yaw={stored_yaw:.2f} for translate calculation")
                 except Exception as e:
                     print(f"[WARNING] Failed to compute translate_x/translate_y automatically: {e}")
+                    import traceback
+                    traceback.print_exc()
 
                 saved_settings[camera_id]["calibration"]["perspective"] = {
                     "tilt_deg": stored_tilt,

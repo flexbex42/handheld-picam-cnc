@@ -8,6 +8,7 @@ Calibration Distortion Window Logik
 import os
 import cv2
 import numpy as np
+from rectificationHelper import find_checkerboard_corners, calibrate_camera_from_samples
 import json
 import icons_rc  # Qt Resource File für Icons
 from PyQt5.QtWidgets import QWidget, QDialogButtonBox, QGraphicsScene, QApplication
@@ -15,8 +16,8 @@ from PyQt5.QtCore import QTimer, Qt, QThread, pyqtSignal
 from PyQt5.QtGui import QImage, QPixmap
 from caliDistortionWin import Ui_Form as Ui_CalibrationDistortionWindow
 from caliDialog import Ui_CalibrationDialog
-from caliDevice import load_camera_settings, get_camera_id, save_camera_settings, get_calibration_settings
-from camera import Camera
+from appSettings import load_camera_settings, save_camera_settings, get_calibration_settings, get_hardware_settings
+import camera
 
 
 class ProcessingThread(QThread):
@@ -33,124 +34,25 @@ class ProcessingThread(QThread):
         self.square_size = square_size
         
     def run(self):
-        """Verarbeite Fotos im Hintergrund"""
+        """Verarbeite Fotos im Hintergrund (refactored to use rectificationHelper)."""
         try:
-            print("[LOG] Processing saved photos in background thread...")
-            print(f"[DEBUG] Sample directory: {self.sample_dir}")
-            print(f"[DEBUG] Trying checkerboard patterns: {self.checkerboard_sizes}")
-            
-            # Sammle Objekt-Punkte und Bild-Punkte
-            objpoints = []  # 3D-Punkte im realen Raum
-            imgpoints = []  # 2D-Punkte im Bild
-            
-            image_size = None
-            successful_images = 0
-            
-            # Durchsuche alle Fotos nach Checkerboards
-            for i in range(1, self.max_samples + 1):
-                filename = f"sample_{i:02d}.jpg"
-                filepath = os.path.join(self.sample_dir, filename)
-                
-                self.progress_updated.emit(f"Searching checkerboard in photo {i}/{self.max_samples}...")
-                print(f"\n[LOG] ===== Processing {filename} =====")
-                
-                if not os.path.exists(filepath):
-                    print(f"[WARNING] File not found: {filepath}")
-                    continue
-                
-                # Lade Bild
-                img = cv2.imread(filepath)
-                if img is None:
-                    print(f"[ERROR] Failed to load {filename}")
-                    continue
-                
-                print(f"[DEBUG] Image loaded: shape={img.shape}, dtype={img.dtype}")
-                
-                gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-                print(f"[DEBUG] Gray image: shape={gray.shape}, dtype={gray.dtype}")
-                print(f"[DEBUG] Gray min={gray.min()}, max={gray.max()}, mean={gray.mean():.2f}")
-                
-                # Versuche verschiedene Checkerboard-Größen
-                found = False
-                found_size = None
-                found_corners = None
-                
-                # Wenn bereits eine Größe erkannt wurde, versuche diese zuerst
-                sizes_to_try = self.checkerboard_sizes.copy()
-                if self.detected_checkerboard_size:
-                    sizes_to_try.remove(self.detected_checkerboard_size)
-                    sizes_to_try.insert(0, self.detected_checkerboard_size)
-                
-                for size in sizes_to_try:
-                    print(f"[DEBUG] Trying pattern {size}...")
-                    flags = cv2.CALIB_CB_ADAPTIVE_THRESH + cv2.CALIB_CB_NORMALIZE_IMAGE
-                    ret, corners = cv2.findChessboardCorners(gray, size, flags)
-                    
-                    if ret:
-                        print(f"[DEBUG] ✓ Pattern {size} found with {len(corners)} corners")
-                        # Verfeinere Ecken-Positionen
-                        criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 30, 0.001)
-                        corners2 = cv2.cornerSubPix(gray, corners, (11, 11), (-1, -1), criteria)
-                        
-                        found = True
-                        found_size = size
-                        found_corners = corners2
-                        
-                        # Setze erkannte Größe beim ersten Erfolg
-                        if self.detected_checkerboard_size is None:
-                            self.detected_checkerboard_size = size
-                            print(f"[INFO] Detected checkerboard size: {size[0]}x{size[1]} inner corners ({size[0]+1}x{size[1]+1} squares)")
-                        
-                        break
-                
-                if found:
-                    # Erstelle 3D-Objekt-Punkte für diese Größe
-                    objp = np.zeros((found_size[0] * found_size[1], 3), np.float32)
-                    objp[:, :2] = np.mgrid[0:found_size[0], 0:found_size[1]].T.reshape(-1, 2)
-                    objp *= self.square_size
-                    
-                    objpoints.append(objp)
-                    imgpoints.append(found_corners)
-                    successful_images += 1
-                    
-                    if image_size is None:
-                        image_size = gray.shape[::-1]
-                    
-                    print(f"[SUCCESS] ✓ Checkerboard found in {filename} (size: {found_size})")
-                else:
-                    print(f"[WARNING] ✗ No checkerboard found in {filename}")
-            
-            # Prüfe ob genug Bilder gefunden wurden
-            if successful_images < 3:
-                error_text = f"Error: Only {successful_images}/{self.max_samples} photos contain valid checkerboards.\n\n"
+            self.progress_updated.emit("Processing calibration samples...")
+            result = calibrate_camera_from_samples(
+                self.sample_dir,
+                self.max_samples,
+                self.checkerboard_sizes,
+                self.detected_checkerboard_size,
+                self.square_size
+            )
+            success, camera_matrix, dist_coeffs, mean_error, detected_size, successful_count = result
+            if not success:
+                error_text = f"Error: Only {successful_count}/{self.max_samples} photos contain valid checkerboards.\n\n"
                 error_text += "At least 3 photos with checkerboards are required for calibration.\n\n"
                 error_text += "Please cancel and try again with better focus and lighting."
                 self.progress_updated.emit(error_text)
-                self.processing_complete.emit(False, None, None, None, None, successful_images)
-                print(f"[ERROR] Not enough valid images: {successful_images}/{self.max_samples}")
+                self.processing_complete.emit(False, None, None, None, None, successful_count)
                 return
-            
-            # Führe Kalibrierung durch
-            self.progress_updated.emit("Calculating camera calibration...")
-            print(f"[LOG] Starting calibration with {successful_images} images...")
-            
-            ret, camera_matrix, dist_coeffs, rvecs, tvecs = cv2.calibrateCamera(
-                objpoints, imgpoints, image_size, None, None
-            )
-            
-            # Berechne Kalibrierungs-Fehler (Reprojection Error)
-            mean_error = 0
-            for i in range(len(objpoints)):
-                imgpoints2, _ = cv2.projectPoints(objpoints[i], rvecs[i], tvecs[i], camera_matrix, dist_coeffs)
-                error = cv2.norm(imgpoints[i], imgpoints2, cv2.NORM_L2) / len(imgpoints2)
-                mean_error += error
-            mean_error /= len(objpoints)
-            
-            print(f"[LOG] Calibration complete. Used {successful_images} images. Error: {mean_error:.4f}")
-            
-            # Sende Erfolg
-            self.processing_complete.emit(True, camera_matrix, dist_coeffs, mean_error, self.detected_checkerboard_size, successful_images)
-            
+            self.processing_complete.emit(True, camera_matrix, dist_coeffs, mean_error, detected_size, successful_count)
         except Exception as e:
             print(f"[ERROR] Processing failed: {e}")
             import traceback
@@ -162,8 +64,6 @@ class ProcessingThread(QThread):
 class CalibrationDistortionWindow(QWidget):
     """Distortion Calibration Window mit Logik"""
     
-    # DEBUG: Setze auf True um Dialog sofort zu zeigen
-    DEBUG_SHOW_DIALOG = False
     
     def __init__(self, parent=None, on_back_callback=None):
         super().__init__(parent)
@@ -245,9 +145,6 @@ class CalibrationDistortionWindow(QWidget):
         else:
             print("[ERROR] Failed to open camera!")
         
-        # DEBUG: Zeige Dialog sofort
-        if self.DEBUG_SHOW_DIALOG:
-            QTimer.singleShot(500, self.debug_show_dialog)
         
         print("[LOG] Distortion Calibration window loaded")
         
@@ -266,8 +163,8 @@ class CalibrationDistortionWindow(QWidget):
     def setup_ui(self):
         """Initialisiere UI-Elemente"""
         # Hole Screen-Größe aus Kalibrierungs-Einstellungen
-        calib_settings = get_calibration_settings()
-        screen_size = calib_settings.get("screen_size", {"width": 640, "height": 480})
+        hardware_settings = get_hardware_settings()
+        screen_size = hardware_settings.get("screen_size", {"width": 640, "height": 480})
         screen_width = screen_size["width"]
         screen_height = screen_size["height"]
         
@@ -308,21 +205,7 @@ class CalibrationDistortionWindow(QWidget):
         # Verstecke Dialog am Anfang
         self.dialog_widget.setVisible(False)
         
-    def debug_show_dialog(self):
-        """DEBUG: Zeige Dialog für Testing"""
-        print("[DEBUG] Showing dialog for testing...")
-        self.dialog_widget.setVisible(True)
-        self.dialog_widget.raise_()
-        self.dialog_ui.lTitle.setText("Processing Calibration")
-        self.dialog_ui.lProgress.setText("Processing photo 1/15...\n\nThis is a test message to see how the dialog looks.\n\nMultiple lines are supported.")
-        self.dialog_ui.bAccept.setEnabled(False)
-        self.dialog_ui.bCancel.setEnabled(True)
-        
-        # Setze initialen Counter
-        self.update_sample_counter()
-        
-        # bUndo initial deaktivieren (keine Bilder vorhanden)
-        self.ui.bUndo.setEnabled(False)
+
         
     def setup_connections(self):
         """Verbinde UI-Elemente mit Logik"""
@@ -359,41 +242,33 @@ class CalibrationDistortionWindow(QWidget):
         self.ui.lSamples.setText(f"{self.current_sample}/{self.max_samples}")
         
     def on_sample_clicked(self):
-        """bSample: Nehme ein Foto auf"""
+        """bSample: Nehme ein Foto auf (über Camera-Klasse)"""
         if self.camera is None:
             print("[ERROR] No camera available")
             return
-        
         # Wenn Counter bei 0, lösche alte Samples (neue Session)
         if self.current_sample == 0:
             self.cleanup_sample_directory()
             print("[LOG] Starting new sample session")
-        
         # Prüfe ob bereits alle Samples gesammelt
         if self.current_sample >= self.max_samples:
             print("[WARNING] All samples already collected!")
             return
-        
-        # Capture aktuelles Frame
-        ret, frame = self.camera.read()
+        # Capture aktuelles Frame über Camera-Klasse
+        ret, frame = self.camera.read() if hasattr(self.camera, 'read') else (False, None)
         if not ret:
             print("[ERROR] Failed to capture frame")
             return
-        
         # Speichere Bild als JPG
         filename = f"sample_{self.current_sample + 1:02d}.jpg"
         filepath = os.path.join(self.sample_dir, filename)
         cv2.imwrite(filepath, frame)
-        
         print(f"[DEBUG] Saved photo: {filepath}")
         print(f"[DEBUG] Frame shape: {frame.shape}, dtype: {frame.dtype}")
-        
         self.current_sample += 1
         self.update_sample_counter()
-        
         # Aktiviere Undo-Button
         self.ui.bUndo.setEnabled(True)
-        
         # Zeige kurz grün an (500ms) dann zurück zu blau
         self.ui.bSample.setStyleSheet("QPushButton { background-color: green; }")
         self.detection_timer.start(500)  # Nach 500ms zurück zu blau

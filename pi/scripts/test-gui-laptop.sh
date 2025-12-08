@@ -31,9 +31,7 @@ for ui_file in ui/*.ui; do
             mainwindow)
                 py_file="mainWin.py"
                 ;;
-            settingswindow)
-                py_file="settingsWin.py"
-                ;;
+            # settingswindow was removed; do not generate settingsWin.py
             calibrationselectwindow)
                 py_file="caliSelectWin.py"
                 ;;
@@ -45,9 +43,6 @@ for ui_file in ui/*.ui; do
                 ;;
             caliOffsetWin)
                 py_file="caliOffsetWin.py"
-                ;;
-            loadingwindow)
-                py_file="loadingWin.py"
                 ;;
             *)
                 py_file="${base_name}.py"

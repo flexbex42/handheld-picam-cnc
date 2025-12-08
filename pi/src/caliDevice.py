@@ -5,202 +5,21 @@ Settings Window Logik
 - Trennung von UI (settingswindow.py) und Logik
 """
 
-import os
 import cv2
-import subprocess
-import re
-import json
 from PyQt5.QtWidgets import QMainWindow, QGraphicsScene, QGraphicsPixmapItem, QTreeWidgetItem
-from PyQt5.QtCore import QThread, pyqtSignal, Qt
+from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QImage, QPixmap
 from caliDeviceWin import Ui_MainWindow as Ui_SettingsWindow
 
-
-# Settings File Path (relativ zu src/)
-SETTINGS_FILE = os.path.join(os.path.dirname(__file__), "..", "res", "camera_settings.json")
-
-# Global variable for selected camera
-_SELECTED_CAMERA_INDEX = None
-_SELECTED_CAMERA_ID = None
+import appSettings
+import camera
 
 
-def set_selected_camera(camera_index, camera_id):
-    """Setze die aktuell ausgewählte Kamera (global für alle Fenster)"""
-    global _SELECTED_CAMERA_INDEX, _SELECTED_CAMERA_ID
-    _SELECTED_CAMERA_INDEX = camera_index
-    _SELECTED_CAMERA_ID = camera_id
-    print(f"[LOG] Selected camera set to index={camera_index}, id={camera_id}")
+
+# Use appSettings for camera selection and persistence (call directly via appSettings)
 
 
-def get_selected_camera():
-    """Hole die aktuell ausgewählte Kamera (index, id)"""
-    return _SELECTED_CAMERA_INDEX, _SELECTED_CAMERA_ID
 
-
-def get_camera_id(camera_index):
-    """Ermittle eindeutige Kamera-ID (Serial Number oder USB Path)"""
-    try:
-        video_device = f"/dev/video{camera_index}"
-        
-        # Versuche Serial Number zu lesen
-        result = subprocess.run(
-            ['udevadm', 'info', '--query=property', '--name', video_device],
-            capture_output=True,
-            text=True,
-            timeout=2
-        )
-        
-        if result.returncode == 0:
-            # Parse für ID_SERIAL oder ID_PATH
-            serial = None
-            path = None
-            
-            for line in result.stdout.split('\n'):
-                if line.startswith('ID_SERIAL='):
-                    serial = line.split('=', 1)[1]
-                elif line.startswith('ID_PATH='):
-                    path = line.split('=', 1)[1]
-            
-            # Bevorzuge Serial, sonst USB Path
-            camera_id = serial or path or f"video{camera_index}"
-            print(f"[LOG] Camera {camera_index} ID: {camera_id}")
-            return camera_id
-            
-    except Exception as e:
-        print(f"[ERROR] Could not get camera ID: {e}")
-    
-    # Fallback: Nutze video Index
-    return f"video{camera_index}"
-
-
-def load_camera_settings():
-    """Lade gespeicherte Kamera-Einstellungen aus JSON"""
-    if not os.path.exists(SETTINGS_FILE):
-        print("[LOG] No settings file found, using defaults")
-        return {}
-    
-    try:
-        with open(SETTINGS_FILE, 'r') as f:
-            settings = json.load(f)
-            print(f"[LOG] Loaded settings for {len(settings)} camera(s)")
-            
-            # Füge Standard calibration_settings hinzu falls nicht vorhanden
-            if "calibration_settings" not in settings:
-                settings["calibration_settings"] = get_default_calibration_settings()
-                save_camera_settings(settings)
-                print("[LOG] Added default calibration_settings to config")
-            
-            return settings
-    except Exception as e:
-        print(f"[ERROR] Could not load settings: {e}")
-        return {}
-
-
-def get_default_calibration_settings():
-    """Gibt Standard-Kalibrierungs-Einstellungen zurück"""
-    return {
-        "checkerboard_boxes": {
-            "x": 11,
-            "y": 8
-        },
-        "checkerboard_dim": {
-            "size_mm": 5
-        },
-        "screen_size": {
-            "width": 640,
-            "height": 480
-        }
-    }
-
-
-def get_calibration_settings():
-    """Hole Kalibrierungs-Einstellungen aus Config"""
-    settings = load_camera_settings()
-    if "calibration_settings" in settings:
-        return settings["calibration_settings"]
-    return get_default_calibration_settings()
-
-
-def save_camera_settings(settings):
-    """Speichere Kamera-Einstellungen in JSON"""
-    try:
-        # Erstelle Verzeichnis falls nicht vorhanden
-        os.makedirs(os.path.dirname(SETTINGS_FILE), exist_ok=True)
-        
-        with open(SETTINGS_FILE, 'w') as f:
-            json.dump(settings, f, indent=4)
-        print(f"[LOG] Settings saved to {SETTINGS_FILE}")
-        return True
-    except Exception as e:
-        print(f"[ERROR] Could not save settings: {e}")
-        return False
-
-
-class VideoThread(QThread):
-    """Thread für Kamera-Capture (non-blocking)"""
-    
-    change_pixmap_signal = pyqtSignal(QImage)
-    
-    def __init__(self, camera_index=0, width=640, height=480, fps=30, fourcc=None):
-        super().__init__()
-        self.camera_index = camera_index
-        self.width = width
-        self.height = height
-        self.fps = fps
-        self.fourcc = fourcc
-        self._run_flag = True
-        
-    def run(self):
-        """Haupt-Loop: Liest Frames und emitted Signals"""
-        # Öffne Kamera mit V4L2 Backend (vermeidet GStreamer Warnungen)
-        cap = cv2.VideoCapture(self.camera_index, cv2.CAP_V4L2)
-        
-        if not cap.isOpened():
-            print(f"[ERROR] Could not open camera {self.camera_index}")
-            return
-        
-        # Setze Format falls angegeben
-        if self.fourcc is not None:
-            cap.set(cv2.CAP_PROP_FOURCC, self.fourcc)
-        
-        # Setze Kamera-Eigenschaften
-        cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.width)
-        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.height)
-        cap.set(cv2.CAP_PROP_FPS, self.fps)
-        
-        # Lese tatsächliche Werte zurück (kann von gewünschten abweichen)
-        actual_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-        actual_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-        actual_fps = int(cap.get(cv2.CAP_PROP_FPS))
-        
-        print(f"[LOG] Camera {self.camera_index} opened: {actual_width}x{actual_height} @ {actual_fps}fps")
-        
-        while self._run_flag:
-            ret, frame = cap.read()
-            if ret:
-                # Konvertiere BGR (OpenCV) zu RGB (Qt)
-                rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                h, w, ch = rgb_frame.shape
-                bytes_per_line = ch * w
-                
-                # Erstelle QImage
-                qt_image = QImage(rgb_frame.data, w, h, bytes_per_line, QImage.Format_RGB888)
-                
-                # Emitte Signal für GUI-Update
-                self.change_pixmap_signal.emit(qt_image)
-            else:
-                print("[ERROR] Failed to read frame")
-                break
-                
-        # Cleanup
-        cap.release()
-        print(f"[LOG] Camera {self.camera_index} released")
-        
-    def stop(self):
-        """Stoppe den Thread sauber"""
-        print("[LOG] Stopping video thread...")
-        self._run_flag = False
-        self.wait()  # Warte bis Thread beendet ist
 
 
 class SettingsWindow(QMainWindow):
@@ -227,19 +46,29 @@ class SettingsWindow(QMainWindow):
         self.pixmap_item = QGraphicsPixmapItem()
         self.scene.addItem(self.pixmap_item)
         self.ui.gvCamera.setScene(self.scene)
-        
-        # Konfiguriere GraphicsView für Vollbildanzeige ohne Scrollbars
-        # Fixe Höhe für Pi Zero 2 W (480px Display)
-        # 480 - 200 (TreeView+Buttons) = 280px
-        camera_height = 280
+
+        # Get screen size from hardware settings
+        hardware_settings = appSettings.get_hardware_settings()
+        screen_size = hardware_settings.get("screen_size", {"width": 640, "height": 480})
+        screen_width = screen_size.get("width", 640)
+        screen_height = screen_size.get("height", 480)
+
+        # Set TreeView width to 200, gvCamera width to (screen_width - 200)
+        treeview_width = 200
+        camera_width = max(100, screen_width - treeview_width)
+        camera_height = screen_height
+        self.ui.treeWidget.setMaximumWidth(treeview_width)
+        self.ui.treeWidget.setMinimumWidth(treeview_width)
+        self.ui.gvCamera.setMaximumWidth(camera_width)
+        self.ui.gvCamera.setMinimumWidth(camera_width)
         self.ui.gvCamera.setMaximumHeight(camera_height)
         self.ui.gvCamera.setMinimumHeight(camera_height)
-        
+
         # Deaktiviere Scrollbars
         from PyQt5.QtCore import Qt
         self.ui.gvCamera.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.ui.gvCamera.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        
+
         # Bild soll abgeschnitten werden, nicht skaliert
         self.ui.gvCamera.setAlignment(Qt.AlignTop | Qt.AlignLeft)
         
@@ -260,10 +89,10 @@ class SettingsWindow(QMainWindow):
         self.current_format = "MJPEG"
         
         # Speichere die vorher ausgewählte Kamera (zum Wiederherstellen bei Cancel)
-        self.previous_selected_index, self.previous_selected_id = get_selected_camera()
+        self.previous_selected_index, self.previous_selected_id = appSettings.get_selected_camera()
         
         # Lade gespeicherte Settings
-        self.saved_settings = load_camera_settings()
+        self.saved_settings = appSettings.load_camera_settings()
         
         # TreeWidget Items (Referenzen speichern)
         self.device_item = None
@@ -285,34 +114,25 @@ class SettingsWindow(QMainWindow):
     
     def auto_load_camera_with_settings(self):
         """Lade automatisch Kamera wenn Settings vorhanden sind"""
-        # Prüfe ob es eine gespeicherte "selected_camera" gibt
-        selected_cam_id = self.saved_settings.get("selected_camera")
-        
+        # Prüfe ob es eine gespeicherte "active_camera" gibt
+        selected_cam_id = self.saved_settings.get("active_camera", {}).get("id")
+        devices = camera.list_video_devices()
         if selected_cam_id:
-            # Versuche die zuletzt ausgewählte Kamera zu laden
             print(f"[LOG] Trying to load previously selected camera: {selected_cam_id}")
-            for i in range(10):
-                video_path = f"/dev/video{i}"
-                if os.path.exists(video_path):
-                    camera_id = get_camera_id(i)
-                    if camera_id == selected_cam_id and camera_id in self.saved_settings:
-                        print(f"[LOG] Found previously selected camera {i}")
-                        self.load_camera(i, camera_id)
-                        return
-            
-            print(f"[LOG] Previously selected camera not found, searching for alternatives...")
-        
-        # Fallback: Suche nach irgendeiner angeschlossener Kamera mit Settings
-        for i in range(10):
-            video_path = f"/dev/video{i}"
-            if os.path.exists(video_path):
-                camera_id = get_camera_id(i)
-                
-                # Prüfe ob Settings für diese Kamera existieren
-                if camera_id in self.saved_settings:
-                    print(f"[LOG] Auto-loading camera {i} with saved settings")
+            for i in devices:
+                camera_id = camera.get_camera_id(i)
+                if camera_id == selected_cam_id and camera_id in self.saved_settings:
+                    print(f"[LOG] Found previously selected camera {i}")
                     self.load_camera(i, camera_id)
-                    break
+                    return
+            print(f"[LOG] Previously selected camera not found, searching for alternatives...")
+        # Fallback: Suche nach irgendeiner angeschlossener Kamera mit Settings
+        for i in devices:
+            camera_id = camera.get_camera_id(i)
+            if camera_id in self.saved_settings:
+                print(f"[LOG] Auto-loading camera {i} with saved settings")
+                self.load_camera(i, camera_id)
+                break
     
     def load_camera(self, camera_index, camera_id):
         """Lade eine Kamera mit ihren Settings"""
@@ -381,7 +201,7 @@ class SettingsWindow(QMainWindow):
                     self.current_camera_index = camera_index
                     
                     # Ermittle Kamera-ID
-                    self.current_camera_id = get_camera_id(camera_index)
+                    self.current_camera_id = camera.get_camera_id(camera_index)
                     print(f"[LOG] Camera {camera_index} selected temporarily (ID: {self.current_camera_id})")
                     
                     # NICHT global setzen - nur temporär in diesem Fenster!
@@ -538,10 +358,7 @@ class SettingsWindow(QMainWindow):
         if fps_list and (not hasattr(self, 'current_fps') or int(self.current_fps) not in fps_list):
             self.current_fps = str(fps_list[0])
     
-    def setup_touchscreen_friendly_ui(self):
-        """Passe UI für Touchscreen an (größere Elemente)"""
-        # Styles werden jetzt über styles.qss gesteuert
-        print("[LOG] Touchscreen-friendly UI configured (via stylesheet)")
+    
         
     def setup_connections(self):
         """Verbinde UI-Elemente mit Logik"""
@@ -615,82 +432,25 @@ class SettingsWindow(QMainWindow):
         print("[LOG] TreeView setup complete")
         
     def get_available_cameras(self):
-        """Findet alle verfügbaren Kameras"""
-        available_cameras = []
-        
-        # Prüfe /dev/video* Geräte - nur Existenz, kein Test
-        # Test beim ersten Start wäre zu langsam
-        for i in range(10):  # Prüfe video0 bis video9
-            video_path = f"/dev/video{i}"
-            if os.path.exists(video_path):
-                available_cameras.append(f"Camera {i} ({video_path})")
-                print(f"[LOG] Found video device: {video_path}")
-        
-        # Falls keine Kameras gefunden, füge Platzhalter hinzu
-        if not available_cameras:
-            available_cameras.append("No cameras detected")
-            
-        return available_cameras
+        """Findet alle verfügbaren Kameras (über camera.py)"""
+        # Delegate to camera.get_available_cameras to avoid duplicated formatting logic
+        try:
+            return camera.get_available_cameras()
+        except Exception:
+            # Fallback: simple device scan
+            devices = camera.list_video_devices()
+            available_cameras = [f"Camera {i} (/dev/video{i})" for i in devices]
+            if not available_cameras:
+                available_cameras.append("No cameras detected")
+            return available_cameras
     
     def get_camera_capabilities(self, camera_index):
-        """Lese unterstützte Formate, Auflösungen und FPS mit v4l2-ctl"""
-        try:
-            video_device = f"/dev/video{camera_index}"
-            
-            # Führe v4l2-ctl aus
-            result = subprocess.run(
-                ['v4l2-ctl', '--device', video_device, '--list-formats-ext'],
-                capture_output=True,
-                text=True,
-                timeout=5
-            )
-            
-            if result.returncode != 0:
-                print(f"[ERROR] v4l2-ctl failed: {result.stderr}")
-                return self.get_default_capabilities()
-            
-            # Parse die Ausgabe
-            output = result.stdout
-            formats = {}
-            current_format = None
-            current_resolution = None
-            
-            for line in output.split('\n'):
-                # Format-Zeile: "[0]: 'MJPG' (Motion-JPEG, compressed)"
-                format_match = re.search(r"\[(\d+)\]:\s+'([^']+)'", line)
-                if format_match:
-                    current_format = format_match.group(2)
-                    formats[current_format] = {}
-                    continue
-                
-                # Auflösungs-Zeile: "Size: Discrete 640x480"
-                size_match = re.search(r"Size:\s+Discrete\s+(\d+)x(\d+)", line)
-                if size_match and current_format:
-                    width = size_match.group(1)
-                    height = size_match.group(2)
-                    current_resolution = f"{width}x{height}"
-                    formats[current_format][current_resolution] = []
-                    continue
-                
-                # FPS-Zeile: "Interval: Discrete 0.033s (30.000 fps)"
-                fps_match = re.search(r"Interval:.*?\((\d+(?:\.\d+)?)\s+fps\)", line)
-                if fps_match and current_format and current_resolution:
-                    fps = int(float(fps_match.group(1)))
-                    if fps not in formats[current_format][current_resolution]:
-                        formats[current_format][current_resolution].append(fps)
-            
-            print(f"[LOG] Camera {camera_index} capabilities: {formats}")
-            return formats
-            
-        except subprocess.TimeoutExpired:
-            print(f"[ERROR] v4l2-ctl timeout")
+        """Lese unterstützte Formate, Auflösungen und FPS (über camera.py)"""
+        formats = camera.get_camera_capabilities(camera_index)
+        print(f"[LOG] Camera {camera_index} capabilities: {formats}")
+        if not formats:
             return self.get_default_capabilities()
-        except FileNotFoundError:
-            print(f"[ERROR] v4l2-ctl not found - install with: sudo apt install v4l-utils")
-            return self.get_default_capabilities()
-        except Exception as e:
-            print(f"[ERROR] Could not read camera capabilities: {e}")
-            return self.get_default_capabilities()
+        return formats
     
     def get_default_capabilities(self):
         """Fallback: Standard-Capabilities wenn v4l2-ctl nicht verfügbar"""
@@ -706,50 +466,11 @@ class SettingsWindow(QMainWindow):
             }
         }
         
-    def load_cameras(self):
-        """Lade verfügbare Kameras in ComboBox"""
-        cameras = self.get_available_cameras()
-        self.ui.cCamera.clear()
-        self.ui.cCamera.addItems(cameras)
-        print(f"[LOG] Loaded {len(cameras)} camera(s)")
+    # load_cameras() removed: ComboBox-based UI is deprecated in favor of TreeView.
         
-    def populate_default_settings(self):
-        """Fülle FPS, Resolution und Format ComboBoxen mit Standard-Werten"""
-        # Standard Resolutionen
-        resolutions = ["320x240", "640x480", "800x600", "1280x720", "1920x1080"]
-        self.ui.cResolution.clear()
-        self.ui.cResolution.addItems(resolutions)
-        self.ui.cResolution.setCurrentText("640x480")  # Default
+    # populate_default_settings() removed: UI uses TreeView; ComboBox defaults are unused.
         
-        # Standard FPS
-        fps_options = ["15", "30", "60"]
-        self.ui.cFps.clear()
-        self.ui.cFps.addItems(fps_options)
-        self.ui.cFps.setCurrentText("30")  # Default
-        
-        # Standard Formate (für später, aktuell nur Info)
-        formats = ["MJPEG", "YUYV", "H264"]
-        self.ui.cFormat.clear()
-        self.ui.cFormat.addItems(formats)
-        self.ui.cFormat.setCurrentText("MJPEG")  # Default
-        
-    def get_current_camera_settings(self, camera_index):
-        """Lese aktuelle Kamera-Einstellungen"""
-        try:
-            # Nutze V4L2 Backend direkt
-            cap = cv2.VideoCapture(camera_index, cv2.CAP_V4L2)
-            if cap.isOpened():
-                width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-                height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-                fps = int(cap.get(cv2.CAP_PROP_FPS))
-                cap.release()
-                
-                print(f"[LOG] Current settings: {width}x{height} @ {fps}fps")
-                return width, height, fps
-        except Exception as e:
-            print(f"[ERROR] Could not read camera settings: {e}")
-        
-        return 640, 480, 30  # Fallback
+    # get_current_camera_settings() removed: callers should use camera.get_camera_info()
     
     def start_camera_with_settings(self):
         """Starte Kamera mit aktuellen Einstellungen"""
@@ -785,7 +506,7 @@ class SettingsWindow(QMainWindow):
         self.stop_camera()
         
         # Erstelle und starte Video Thread mit Einstellungen
-        self.video_thread = VideoThread(self.current_camera_index, width, height, fps, format_fourcc)
+        self.video_thread = camera.VideoThread(self.current_camera_index, width, height, fps, format_fourcc)
         self.video_thread.change_pixmap_signal.connect(self.update_image)
         self.video_thread.start()
     
@@ -793,103 +514,50 @@ class SettingsWindow(QMainWindow):
         """Stoppe Kamera-Stream"""
         if self.video_thread is not None:
             self.video_thread.stop()
-            self.video_thread = None
+            devices = camera.list_video_devices()
             print("[LOG] Camera stopped")
             
     def update_image(self, qt_image):
-        """Update das QGraphicsView mit neuem Frame"""
         pixmap = QPixmap.fromImage(qt_image)
         self.pixmap_item.setPixmap(pixmap)
-        
         # Fit in View beim ersten Frame
         if self.scene.sceneRect().isEmpty():
             self.ui.gvCamera.fitInView(self.scene.sceneRect(), Qt.KeepAspectRatio)
-    
+
     def on_cancel_clicked(self):
         """bCancel: Verwerfe temporäre Auswahl, stelle vorherige wieder her"""
         print("[LOG] Cancel button pressed - discarding changes")
-        
         # Stelle vorherige Auswahl wieder her
         if self.previous_selected_index is not None and self.previous_selected_id is not None:
-            set_selected_camera(self.previous_selected_index, self.previous_selected_id)
+            appSettings.set_selected_camera(self.previous_selected_index, self.previous_selected_id)
             print(f"[LOG] Restored previous camera selection: index={self.previous_selected_index}, id={self.previous_selected_id}")
-        
         # Stoppe Kamera vor dem Verlassen
         self.stop_camera()
-        
         if self.on_back_callback:
             self.on_back_callback()
-    
+
     def on_ok_clicked(self):
         """bOk: Übernimm temporäre Auswahl global und speichere in JSON"""
         print("[LOG] OK button pressed - applying changes")
-        
         # Übernimm die aktuelle Auswahl global
         if self.current_camera_index is not None and self.current_camera_id is not None:
-            set_selected_camera(self.current_camera_index, self.current_camera_id)
+            appSettings.set_selected_camera(self.current_camera_index, self.current_camera_id)
             print(f"[LOG] Applied camera selection globally: index={self.current_camera_index}, id={self.current_camera_id}")
-            
             # Speichere Kamera-Settings (inkl. ausgewählte Kamera)
             self.save_current_camera_settings()
-            
-            # Speichere "selected_camera" in Settings
-            self.saved_settings["selected_camera"] = self.current_camera_id
-            save_camera_settings(self.saved_settings)
-            print(f"[LOG] Saved selected camera to settings: {self.current_camera_id}")
-        
+            # active_camera is now persisted via set_selected_camera; no legacy selected_camera entry
         # Stoppe Kamera vor dem Verlassen
         self.stop_camera()
-        
         if self.on_back_callback:
             self.on_back_callback()
-    
-    def on_back_clicked(self):
-        """Legacy-Methode - wird nicht mehr verwendet"""
-        # Alte Methode für Kompatibilität behalten
-        self.on_cancel_clicked()
-    
+
     def save_current_camera_settings(self):
-        """Speichere aktuelle Kamera-Einstellungen"""
-        if not self.current_camera_id:
-            return
-        
-        # Prüfe ob diese Kamera bereits existiert
-        existing_settings = self.saved_settings.get(self.current_camera_id, {})
-        
-        # Prüfe ob sich kritische Parameter geändert haben (Format, Resolution, FPS)
-        # Wenn ja, muss Kamera neu kalibriert werden
-        format_changed = existing_settings.get('format') != self.current_format
-        resolution_changed = existing_settings.get('resolution') != self.current_resolution
-        fps_changed = existing_settings.get('fps') != int(self.current_fps)
-        
-        critical_change = format_changed or resolution_changed or fps_changed
-        
-        # Entscheide ob Kalibrierung behalten oder gelöscht werden soll
-        if critical_change:
-            # Kritische Parameter haben sich geändert → Kamera muss neu kalibriert werden
-            calibration_data = {}
-            if existing_settings:
-                print(f"[LOG] Critical camera parameters changed - calibration reset required!")
-                print(f"  Format: {existing_settings.get('format')} → {self.current_format} (changed: {format_changed})")
-                print(f"  Resolution: {existing_settings.get('resolution')} → {self.current_resolution} (changed: {resolution_changed})")
-                print(f"  FPS: {existing_settings.get('fps')} → {int(self.current_fps)} (changed: {fps_changed})")
-        else:
-            # Nur Device-Nummer hat sich geändert → Kalibrierung behalten
-            calibration_data = existing_settings.get('calibration', {})
-            if calibration_data:
-                print(f"[LOG] Device number changed, but calibration data preserved")
-        
-        # Aktualisiere Settings Dictionary
-        self.saved_settings[self.current_camera_id] = {
-            'device': self.current_camera_index,
-            'format': self.current_format,
-            'resolution': self.current_resolution,
-            'fps': int(self.current_fps),
-            'calibration': calibration_data
-        }
-        
-        # Speichere in Datei
-        if save_camera_settings(self.saved_settings):
-            print(f"[LOG] Saved settings for camera {self.current_camera_id}")
-        else:
-            print(f"[ERROR] Failed to save settings")
+        """Delegate camera settings save to appSettings.save_current_camera_settings."""
+        appSettings.save_current_camera_settings(
+            self.saved_settings,
+            self.current_camera_id,
+            self.current_camera_index,
+            self.current_format,
+            self.current_resolution,
+            self.current_fps
+        )

@@ -8,12 +8,14 @@ PyQt5 App mit Trennung von UI und Logik
 import sys
 import cv2  # Wird beim Start geladen (dauert ~16 Sekunden auf Pi)
 import os
+import json
 from PyQt5.QtWidgets import QApplication, QMainWindow
 from PyQt5.QtCore import Qt
 
 # Importiere die auto-generierten UIs
 from mainWin import Ui_MainWindow
-from caliDevice import SettingsWindow, load_camera_settings, get_camera_id, get_calibration_settings
+from caliDevice import SettingsWindow
+from appSettings import load_camera_settings, get_calibration_settings, set_selected_camera, get_selected_camera, get_hardware_settings
 from caliSelect import CalibrationSelectWindow
 
 
@@ -51,11 +53,13 @@ class MainApp(QMainWindow):
     
     def load_selected_camera_on_startup(self):
         """Lade die zuletzt ausgewählte Kamera beim Programmstart"""
-        from caliDevice import set_selected_camera
         saved_settings = load_camera_settings()
-        
-        selected_cam_id = saved_settings.get("selected_camera")
-        
+
+        # Assume new 'active_camera' object exists in settings. If its id is empty,
+        # treat this as no camera selected.
+        active_cam = saved_settings['active_camera']
+        selected_cam_id = active_cam.get('id') or None
+
         if selected_cam_id:
             # Versuche die zuletzt ausgewählte Kamera zu finden
             print(f"[LOG] Looking for previously selected camera: {selected_cam_id}")
@@ -64,123 +68,63 @@ class MainApp(QMainWindow):
                 if os.path.exists(video_path):
                     camera_id = get_camera_id(i)
                     if camera_id == selected_cam_id:
+                        # Persistence of active camera will be handled by set_selected_camera()
+                        # updating device number
                         set_selected_camera(i, camera_id)
                         print(f"[LOG] Loaded previously selected camera on startup: index={i}, id={camera_id}")
                         return
-            
+
             print(f"[LOG] Previously selected camera not found")
         else:
             print("[LOG] No previously selected camera in settings")
         
     def update_camera_status(self):
         """Update Checkboxes mit Kamera-Status und MCU-Status"""
-        from caliDevice import get_selected_camera
-        
-        # Lade gespeicherte Settings
+        from camera import get_active_camera
         saved_settings = load_camera_settings()
-        
-        # Hole ausgewählte Kamera
-        selected_index, selected_id = get_selected_camera()
-        
-        # Finde erste angeschlossene Kamera
-        camera_found = False
-        camera_with_settings = False
-        camera_id = None
-        display_name = "Camera"
-        
-        # Prüfe zuerst ob ausgewählte Kamera verfügbar ist
-        if selected_index is not None and selected_id is not None:
-            video_path = f"/dev/video{selected_index}"
-            if os.path.exists(video_path):
-                camera_found = True
-                camera_id = selected_id
-                if camera_id in saved_settings:
-                    camera_with_settings = True
-                    # Zeige kurze Version der ID
-                    display_name = camera_id.split('_')[0] if '_' in camera_id else camera_id[:15]
-        
-        # Fallback: Suche nach irgendeiner Kamera
-        if not camera_found:
-            for i in range(10):
-                video_path = f"/dev/video{i}"
-                if os.path.exists(video_path):
-                    camera_found = True
-                    # Ermittle Kamera-ID
-                    camera_id = get_camera_id(i)
-                    
-                    # Prüfe ob Settings vorhanden
-                    if camera_id in saved_settings:
-                        camera_with_settings = True
-                        display_name = camera_id.split('_')[0] if '_' in camera_id else camera_id[:15]
-                        break
-        
-        # Update cbCamera basierend auf Kamera-Status
-        if not camera_found:
-            # Fall 1: Keine Kamera gefunden - rot, unchecked
+        result = get_active_camera()
+        if result is None:
+            # No camera found
             self.main_ui.cbCamera.setChecked(False)
             self.main_ui.cbCamera.setText("No Camera")
             self.main_ui.cbCamera.setStyleSheet("QCheckBox { color: red; }")
             print("[LOG] No camera found")
-            
-        elif camera_found and not camera_with_settings:
-            # Fall 2: Unbekannte Kamera - gelb, unchecked
-            self.main_ui.cbCamera.setChecked(False)
-            self.main_ui.cbCamera.setText(f"{display_name}\nCalibrate!")
-            self.main_ui.cbCamera.setStyleSheet("QCheckBox { color: orange; }")
-            print("[LOG] Camera found but no settings")
-            
-        elif camera_with_settings:
-            # Fall 3: Bekannte Kamera - prüfe Kalibrierungs-Status
-            
-            # Lade Kalibrierungs-Daten
+            camera_id = None
+        else:
+            camera_id, device_number = result
+            display_name = camera_id.split('_')[0] if '_' in camera_id else camera_id[:15]
             camera_settings = saved_settings.get(camera_id, {})
             calibration_data = camera_settings.get("calibration", {})
-            
-            # Prüfe ob alle Kalibrierungen vorhanden sind
             has_geometric = "geometric" in calibration_data and calibration_data["geometric"]
             has_scale = "scale" in calibration_data and calibration_data["scale"]
             has_offset = "offset" in calibration_data and calibration_data["offset"]
             all_calibrated = has_geometric and has_scale and has_offset
-            
             if all_calibrated:
-                # Alle Kalibrierungen vorhanden - grün, checked
                 self.main_ui.cbCamera.setChecked(True)
                 self.main_ui.cbCamera.setText(f"{display_name}")
                 self.main_ui.cbCamera.setStyleSheet("QCheckBox { color: green; }")
                 print(f"[LOG] Camera fully calibrated: {display_name}")
             else:
-                # Nicht alle Kalibrierungen vorhanden - orange, unchecked
                 self.main_ui.cbCamera.setChecked(False)
                 self.main_ui.cbCamera.setText(f"{display_name}\nCalibrate")
                 self.main_ui.cbCamera.setStyleSheet("QCheckBox { color: orange; }")
                 print(f"[LOG] Camera needs calibration: {display_name}")
-        
         # MCU Status (Dummy - noch nicht implementiert)
         mcu_detected = False
-        
-        # Update cbMCU
         self.main_ui.cbMCU.setChecked(False)
         self.main_ui.cbMCU.setText("No MCU")
         self.main_ui.cbMCU.setStyleSheet("QCheckBox { color: red; }")
-        
         # Disable alle Checkboxen (nur Status-Anzeige)
         self.main_ui.cbCamera.setEnabled(False)
         self.main_ui.cbMCU.setEnabled(False)
-        
         # Force Style-Update
         self.main_ui.cbCamera.style().unpolish(self.main_ui.cbCamera)
         self.main_ui.cbCamera.style().polish(self.main_ui.cbCamera)
         self.main_ui.cbMCU.style().unpolish(self.main_ui.cbMCU)
         self.main_ui.cbMCU.style().polish(self.main_ui.cbMCU)
-        
         # ===== Button Aktivierung/Deaktivierung =====
-        # bCameraSetup: Nur aktiv wenn Kamera erkannt
-        self.main_ui.bCameraSetup.setEnabled(camera_found)
-        
-        # bMCUSetup: Nur aktiv wenn MCU erkannt
+        self.main_ui.bCameraSetup.setEnabled(result is not None)
         self.main_ui.bMCUSetup.setEnabled(mcu_detected)
-        
-        # bCncMode: Nur aktiv wenn beide Checkboxen checked sind
         both_ready = self.main_ui.cbCamera.isChecked() and self.main_ui.cbMCU.isChecked()
         self.main_ui.bCncMode.setEnabled(both_ready)
         
@@ -326,8 +270,8 @@ if __name__ == "__main__":
     
     if debug_mode:
         # Hole Screen-Größe aus Kalibrierungs-Einstellungen
-        calib_settings = get_calibration_settings()
-        screen_size = calib_settings.get("screen_size", {"width": 640, "height": 480})
+        hardware_settings = get_hardware_settings()
+        screen_size = hardware_settings.get("screen_size", {"width": 640, "height": 480})
         screen_width = screen_size["width"]
         screen_height = screen_size["height"]
         

@@ -10,6 +10,7 @@ Calibration Perspective Window Logik
 import os
 import cv2
 import numpy as np
+from rectificationHelper import find_checkerboard_corners, undistort_image, compute_perspective_from_samples
 import json
 import time
 import icons_rc  # Qt Resource File für Icons
@@ -18,12 +19,10 @@ from PyQt5.QtCore import QTimer, Qt, QThread, pyqtSignal
 from PyQt5.QtGui import QImage, QPixmap
 from caliPerspectiveWin import Ui_Form as Ui_CalibrationPerspectiveWindow
 from caliDialog import Ui_CalibrationDialog
-from caliDevice import load_camera_settings, get_camera_id, save_camera_settings, get_calibration_settings
-from camera import Camera
+from appSettings import load_camera_settings, save_camera_settings, get_calibration_settings, get_selected_camera, get_hardware_settings
+import camera
 
 
-# Debug-Modus: Dialog sofort anzeigen für Testing
-DEBUG_SHOW_DIALOG = False
 
 
 class ProcessingThread(QThread):
@@ -42,192 +41,23 @@ class ProcessingThread(QThread):
         self.dist_coeffs = dist_coeffs
         
     def run(self):
-        """Verarbeite Fotos im Hintergrund"""
+        """Verarbeite Fotos im Hintergrund (refactored to use rectificationHelper)."""
         try:
-            print("[LOG] Processing perspective photos in background thread...")
-            print(f"[DEBUG] Sample directory: {self.sample_dir}")
-            print(f"[DEBUG] Trying checkerboard patterns: {self.checkerboard_sizes}")
-            print(f"[DEBUG] Using distortion coefficients: {self.dist_coeffs}")
-            
-            # Sammle Objekt-Punkte und Bild-Punkte
-            objpoints = []  # 3D-Punkte im realen Raum
-            imgpoints = []  # 2D-Punkte im Bild
-            
-            successful_images = 0
-            
-            # Erstelle 3D-Punkte für das Schachbrettmuster (z=0 Ebene)
-            if self.detected_checkerboard_size:
-                pattern_size = self.detected_checkerboard_size
-            else:
-                pattern_size = self.checkerboard_sizes[0]
-            
-            objp = np.zeros((pattern_size[0] * pattern_size[1], 3), np.float32)
-            objp[:, :2] = np.mgrid[0:pattern_size[0], 0:pattern_size[1]].T.reshape(-1, 2)
-            objp *= self.square_size  # Skaliere auf tatsächliche Größe in mm
-            
-            # Durchsuche alle Fotos nach Checkerboards
-            for i in range(1, self.max_samples + 1):
-                filename = f"sample_{i:02d}.jpg"
-                filepath = os.path.join(self.sample_dir, filename)
-                
-                self.progress_updated.emit(f"Searching checkerboard in photo {i}/{self.max_samples}...")
-                print(f"\n[LOG] ===== Processing {filename} =====")
-                
-                if not os.path.exists(filepath):
-                    print(f"[WARNING] File not found: {filepath}")
-                    continue
-                
-                # Lade Bild
-                img = cv2.imread(filepath)
-                if img is None:
-                    print(f"[ERROR] Failed to load {filename}")
-                    continue
-                
-                print(f"[DEBUG] Image loaded: shape={img.shape}, dtype={img.dtype}")
-                
-                # Entzerrung mit Distortion-Koeffizienten
-                img_undistorted = cv2.undistort(img, self.camera_matrix, self.dist_coeffs)
-                print(f"[DEBUG] Image undistorted using camera matrix and dist coeffs")
-                
-                gray = cv2.cvtColor(img_undistorted, cv2.COLOR_BGR2GRAY)
-                # ensure contiguous uint8 array for OpenCV native calls
-                gray = np.ascontiguousarray(gray, dtype=np.uint8)
-                print(f"[DEBUG] Gray image: shape={gray.shape}, dtype={gray.dtype}")
-
-                # Versuche verschiedene Checkerboard-Größen
-                found = False
-                found_size = None
-                found_corners = None
-                
-                # Wenn bereits eine Größe erkannt wurde, versuche diese zuerst
-                sizes_to_try = self.checkerboard_sizes.copy()
-                if self.detected_checkerboard_size:
-                    sizes_to_try.remove(self.detected_checkerboard_size)
-                    sizes_to_try.insert(0, self.detected_checkerboard_size)
-                
-                for size in sizes_to_try:
-                    try:
-                        print(f"[DEBUG] Trying checkerboard size: {size}")
-                        # defensive: ensure pattern is tuple of ints
-                        pattern_tuple = (int(size[0]), int(size[1]))
-                        ret, corners = cv2.findChessboardCorners(gray, pattern_tuple,
-                                                                flags=cv2.CALIB_CB_ADAPTIVE_THRESH + cv2.CALIB_CB_NORMALIZE_IMAGE)
-                        if ret and corners is not None:
-                            print(f"[SUCCESS] Checkerboard found with size {size}! Refining corners...")
-                            found = True
-                            found_size = size
-
-                            # Verfeinere Ecken
-                            try:
-                                criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 30, 0.001)
-                                # ensure corners are correct dtype/shape
-                                corners2 = cv2.cornerSubPix(gray, corners, (11, 11), (-1, -1), criteria)
-                                found_corners = corners2
-                            except Exception as e:
-                                print(f"[WARN] cornerSubPix failed: {e}")
-                                found_corners = corners
-
-                            # Speichere erkannte Größe für nächste Iteration
-                            if not self.detected_checkerboard_size:
-                                self.detected_checkerboard_size = size
-                                print(f"[INFO] Auto-detected checkerboard size: {size}")
-
-                            break
-                        else:
-                            print(f"[DEBUG] Size {size} failed (ret={ret})")
-                    except Exception as e:
-                        print(f"[WARN] findChessboardCorners raised exception for size {size}: {e}")
-                        # continue to next size
-                
-                if found:
-                    # Wenn die Größe sich ändert, passe objp an
-                    if found_size != pattern_size:
-                        pattern_size = found_size
-                        objp = np.zeros((pattern_size[0] * pattern_size[1], 3), np.float32)
-                        objp[:, :2] = np.mgrid[0:pattern_size[0], 0:pattern_size[1]].T.reshape(-1, 2)
-                        objp *= self.square_size
-                    
-                    objpoints.append(objp)
-                    imgpoints.append(found_corners)
-                    successful_images += 1
-                    print(f"[SUCCESS] Photo {i} added to calibration set (total: {successful_images})")
-                else:
-                    print(f"[WARNING] No checkerboard found in {filename}")
-            
-            # Berechne Perspective Calibration
-            self.progress_updated.emit(f"Calculating perspective from {successful_images} photos...")
-            print(f"\n[LOG] ===== Calculating Perspective =====")
-            print(f"[INFO] Using {successful_images} successful images")
-            
-            if successful_images < 3:
-                print("[ERROR] Not enough successful images (need at least 3)")
-                self.processing_complete.emit(False, 0, 0, 0, successful_images)
+            self.progress_updated.emit("Processing perspective calibration samples...")
+            result = compute_perspective_from_samples(
+                self.sample_dir,
+                self.max_samples,
+                self.checkerboard_sizes,
+                self.detected_checkerboard_size,
+                self.square_size,
+                self.camera_matrix,
+                self.dist_coeffs
+            )
+            success, tilt_deg, yaw_deg, scale_mm_per_pixel, successful_count = result
+            if not success:
+                self.processing_complete.emit(False, 0, 0, 0, successful_count)
                 return
-            
-            # Verwende solvePnP für jedes Bild und mittele die Ergebnisse
-            rvecs_list = []
-            tvecs_list = []
-            
-            for obj_pts, img_pts in zip(objpoints, imgpoints):
-                # ensure correct contiguous dtypes to avoid native crashes
-                obj_pts_np = np.ascontiguousarray(np.array(obj_pts, dtype=np.float32))
-                img_pts_np = np.ascontiguousarray(np.array(img_pts, dtype=np.float32))
-                try:
-                    success, rvec, tvec = cv2.solvePnP(obj_pts_np, img_pts_np, self.camera_matrix, None)
-                except Exception as e:
-                    print(f"[WARN] solvePnP raised exception: {e}")
-                    success = False
-                if success:
-                    rvecs_list.append(rvec)
-                    tvecs_list.append(tvec)
-            
-            if len(rvecs_list) == 0:
-                print("[ERROR] solvePnP failed for all images")
-                self.processing_complete.emit(False, 0, 0, 0, successful_images)
-                return
-            
-            # Mittele Rotation Vectors
-            rvec_mean = np.mean(rvecs_list, axis=0)
-            tvec_mean = np.mean(tvecs_list, axis=0)
-            
-            # Konvertiere Rotation Vector zu Rotation Matrix
-            rmat, _ = cv2.Rodrigues(rvec_mean)
-            
-            # Berechne Tilt und Yaw aus Rotation Matrix
-            # Tilt: Rotation um X-Achse (pitch)
-            # Yaw: Rotation um Y-Achse
-            tilt_rad = np.arcsin(-rmat[2, 0])
-            yaw_rad = np.arctan2(rmat[1, 0], rmat[0, 0])
-            
-            tilt_deg = np.degrees(tilt_rad)
-            yaw_deg = np.degrees(yaw_rad)
-            
-            # Berechne Scale (mm/pixel)
-            # Verwende die mittlere Distanz der Ecken im Bild
-            # und vergleiche mit der bekannten realen Distanz
-            
-            # Nehme ersten erfolgreichen Bildpunkt-Set für Scale-Berechnung
-            img_pts = imgpoints[0]
-            
-            # Berechne durchschnittlichen Abstand zwischen benachbarten Ecken im Bild (in Pixel)
-            distances_px = []
-            for idx in range(len(img_pts) - 1):
-                if idx % pattern_size[0] < pattern_size[0] - 1:  # Horizontale Nachbarn
-                    dist = np.linalg.norm(img_pts[idx] - img_pts[idx + 1])
-                    distances_px.append(dist)
-            
-            avg_dist_px = np.mean(distances_px)
-            
-            # Reale Distanz ist square_size in mm
-            scale_mm_per_pixel = self.square_size / avg_dist_px
-            
-            print(f"[RESULT] Tilt: {tilt_deg:.2f}°")
-            print(f"[RESULT] Yaw: {yaw_deg:.2f}°")
-            print(f"[RESULT] Scale: {scale_mm_per_pixel:.4f} mm/pixel")
-            print(f"[RESULT] Successful images: {successful_images}/{self.max_samples}")
-            
-            self.processing_complete.emit(True, tilt_deg, yaw_deg, scale_mm_per_pixel, successful_images)
-            
+            self.processing_complete.emit(True, tilt_deg, yaw_deg, scale_mm_per_pixel, successful_count)
         except Exception as e:
             print(f"[ERROR] Exception in processing thread: {e}")
             import traceback
@@ -301,9 +131,6 @@ class CalibrationPerspectiveWindow(QWidget):
         # Initialisiere Kamera
         self.init_camera()
         
-        # Debug: Zeige Dialog sofort
-        if DEBUG_SHOW_DIALOG:
-            self.debug_show_dialog()
     
     def load_distortion_coefficients(self):
         """Lade Distortion-Koeffizienten aus JSON"""
@@ -338,13 +165,11 @@ class CalibrationPerspectiveWindow(QWidget):
         camera_id = saved_settings.get('selected_camera')
         if not camera_id:
             # scan /dev/video* for a matching camera id in settings
-            for i in range(10):
-                video_path = f"/dev/video{i}"
-                if os.path.exists(video_path):
-                    cam_id = get_camera_id(i)
-                    if cam_id in saved_settings:
-                        camera_id = cam_id
-                        break
+            for i in list_video_devices():
+                cam_id = get_camera_id(i)
+                if cam_id in saved_settings:
+                    camera_id = cam_id
+                    break
 
         if not camera_id:
             print("[ERROR] No camera ID found in settings")
@@ -387,14 +212,7 @@ class CalibrationPerspectiveWindow(QWidget):
         self.ui.gvCamera.setScene(self.scene)
         self.ui.lSamples.setText(f"{self.sample_count}/{self.max_samples}")
     
-    def debug_show_dialog(self):
-        """Debug: Zeige Dialog sofort für Testing"""
-        print("[DEBUG] Showing dialog in debug mode...")
-        self.show_processing_dialog()
-        if self.calibration_dialog:
-            self.calibration_dialog.dialog_ui.lTitle.setText("Debug Mode")
-            self.calibration_dialog.dialog_ui.lProgress.setText("This is a test dialog.\n\nYou can test the buttons.")
-            self.calibration_dialog.dialog_ui.bAccept.setEnabled(True)
+
     
     def setup_connections(self):
         """Signal-Verbindungen einrichten"""
@@ -406,15 +224,14 @@ class CalibrationPerspectiveWindow(QWidget):
     def init_camera(self):
         """Initialisiere Kamera"""
         # Lade Kamera-Settings
-        from caliDevice import get_selected_camera
         saved_settings = load_camera_settings()
-        
+
         # Prüfe ob eine Kamera ausgewählt wurde
         selected_index, selected_id = get_selected_camera()
-        
+
         camera_id = None
         device_index = None
-        
+
         if selected_index is not None and selected_id is not None:
             # Nutze ausgewählte Kamera
             print(f"[LOG] Using selected camera: index={selected_index}, id={selected_id}")
@@ -423,58 +240,42 @@ class CalibrationPerspectiveWindow(QWidget):
         else:
             # Fallback: Finde erste angeschlossene Kamera mit Settings
             print("[LOG] No camera selected, using first available camera with settings")
-            for i in range(10):
-                video_path = f"/dev/video{i}"
-                if os.path.exists(video_path):
-                    cam_id = get_camera_id(i)
-                    if cam_id in saved_settings:
-                        camera_id = cam_id
-                        device_index = i
-                        break
-        
+            for i in list_video_devices():
+                cam_id = get_camera_id(i)
+                if cam_id in saved_settings:
+                    camera_id = cam_id
+                    device_index = i
+                    break
+
         if not camera_id or device_index is None:
             print("[ERROR] No camera found")
             return
-        
+
         settings = saved_settings.get(camera_id, {})
         if not settings:
             print("[ERROR] No camera settings found")
             return
-        
-        # Öffne Kamera mit Index und V4L2 Backend (wichtig für Linux)
-        self.cap = cv2.VideoCapture(device_index, cv2.CAP_V4L2)
-        if not self.cap.isOpened():
+
+        # Öffne Kamera über Camera-Klasse
+        self.camera = Camera()
+        if not self.camera.open():
             print(f"[ERROR] Failed to open camera: /dev/video{device_index}")
             return
-        
         print(f"[INFO] Camera opened: /dev/video{device_index}")
-        
-        # Setze Kamera-Parameter aus Settings
-        res = settings.get("resolution", "640x480")
-        width, height = map(int, res.split('x'))
-        self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
-        self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
-        self.cap.set(cv2.CAP_PROP_FPS, settings.get("fps", 30))
-        
         # Starte Timer für Frame-Updates
         self.timer.start(33)  # ~30 FPS
     
     def update_frame(self):
         """Update camera frame"""
-        if not self.cap or not self.cap.isOpened():
+        if not self.camera or not hasattr(self.camera, 'read'):
             return
-        
-        ret, frame = self.cap.read()
+        ret, frame = self.camera.read()
         if not ret:
             return
-        
-        # Konvertiere zu QImage
         rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         h, w, ch = rgb_frame.shape
         bytes_per_line = ch * w
         qt_image = QImage(rgb_frame.data, w, h, bytes_per_line, QImage.Format_RGB888)
-        
-        # Zeige in GraphicsView
         pixmap = QPixmap.fromImage(qt_image)
         self.scene.clear()
         self.scene.addPixmap(pixmap)
@@ -486,27 +287,17 @@ class CalibrationPerspectiveWindow(QWidget):
             print("[LOG] Auto-capture already active")
             return
         
-        if not self.cap or not self.cap.isOpened():
+        if not self.camera or not hasattr(self.camera, 'read'):
             print("[ERROR] Camera not available")
             return
-        
-        # Erstelle Sample-Verzeichnis
         os.makedirs(self.sample_dir, exist_ok=True)
-        
-        # Lösche alte Samples
         for i in range(1, self.max_samples + 1):
             filepath = os.path.join(self.sample_dir, f"sample_{i:02d}.jpg")
             if os.path.exists(filepath):
                 os.remove(filepath)
-        
-        # Reset Sample Count
         self.sample_count = 0
         self.ui.lSamples.setText(f"{self.sample_count}/{self.max_samples}")
-        
-        # Deaktiviere Start-Button
         self.ui.bStart.setEnabled(False)
-        
-        # Starte Auto-Capture
         self.auto_capture_active = True
         self.auto_capture_timer.start(self.auto_capture_interval)
         print("[LOG] Auto-capture started")
@@ -524,25 +315,20 @@ class CalibrationPerspectiveWindow(QWidget):
             return
         
         # Nehme Foto
-        if not self.cap or not self.cap.isOpened():
+        if not self.camera or not hasattr(self.camera, 'read'):
             print("[ERROR] Camera not available")
             self.auto_capture_timer.stop()
             self.auto_capture_active = False
             return
-        
-        ret, frame = self.cap.read()
+        ret, frame = self.camera.read()
         if not ret:
             print("[ERROR] Failed to capture frame")
             return
-        
         self.sample_count += 1
         filename = f"sample_{self.sample_count:02d}.jpg"
         filepath = os.path.join(self.sample_dir, filename)
         cv2.imwrite(filepath, frame)
-        
         print(f"[LOG] Captured {filename}")
-        
-        # Update UI
         self.ui.lSamples.setText(f"{self.sample_count}/{self.max_samples}")
     
     def on_processing_progress(self, message):
@@ -571,13 +357,11 @@ class CalibrationPerspectiveWindow(QWidget):
 
             # Fallback for legacy setups: scan /dev/video* for a camera that has settings
             if not camera_id:
-                for i in range(10):
-                    video_path = f"/dev/video{i}"
-                    if os.path.exists(video_path):
-                        cam_id = get_camera_id(i)
-                        if cam_id in saved_settings:
-                            camera_id = cam_id
-                            break
+                for i in list_video_devices():
+                    cam_id = get_camera_id(i)
+                    if cam_id in saved_settings:
+                        camera_id = cam_id
+                        break
             
             if camera_id:
                 # Stelle sicher dass Calibration-Dict existiert
@@ -600,7 +384,7 @@ class CalibrationPerspectiveWindow(QWidget):
                     except Exception:
                         w_img, h_img = 640, 480
                 else:
-                    screen = saved_settings.get('calibration_settings', {}).get('screen_size', {})
+                    screen = saved_settings.get('hardware_setting', {}).get('screen_size', {})
                     w_img = int(screen.get('width', 640))
                     h_img = int(screen.get('height', 480))
 
@@ -810,9 +594,9 @@ class CalibrationPerspectiveWindow(QWidget):
     
     def cleanup_camera(self):
         """Cleanup camera"""
-        if self.cap:
-            self.cap.release()
-            self.cap = None
+        if hasattr(self, 'camera') and self.camera:
+            self.camera.release()
+            self.camera = None
             print("[LOG] Camera released")
     
     def closeEvent(self, event):

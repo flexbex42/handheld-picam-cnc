@@ -1,6 +1,5 @@
 {
     "Chicony_Electronics_Co._Ltd._HD_User_Facing_0001": {
-        "device": 0,
         "format": "MJPG",
         "resolution": "640x480",
         "fps": 30,
@@ -27,7 +26,6 @@
         }
     },
     "Etron_Technology__Inc._USB2.0_Camera": {
-        "device": 2,
         "format": "YUYV",
         "resolution": "640x480",
         "fps": 30,

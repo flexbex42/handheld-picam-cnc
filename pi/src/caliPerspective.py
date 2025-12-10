@@ -24,7 +24,6 @@ import camera
 
 
 
-
 class ProcessingThread(QThread):
     """Hintergrund-Thread für Foto-Verarbeitung"""
     progress_updated = pyqtSignal(str)  # Text für Progress-Label
@@ -249,7 +248,6 @@ class CalibrationPerspectiveWindow(QWidget):
     
     def on_auto_capture_tick(self):
         """Auto-Capture Tick: Nehme nächstes Foto"""
-        import appSettings
         NO_CAM_MODE = appSettings.is_debug_no_cam()
         if self.sample_count >= self.max_samples:
             # Alle Samples gesammelt
@@ -306,46 +304,43 @@ class CalibrationPerspectiveWindow(QWidget):
             return
         
         if success:
-                        
             # Always use the active_camera from settings for saving calibration
-            camera_id=appSettings.get_active_camera_id()
+            camera_id = appSettings.get_active_camera_id()
             print(f"[DEBUG] Using active_camera for saving perspective calibration: {camera_id}")
-                                           
-            # Speichere Perspective-Daten
-            # store tilt as negated and yaw shifted by +180° per new convention
+
+            # Load all settings and get this camera's calibration dict
+            saved_settings = appSettings.load_app_settings()
+            if camera_id not in saved_settings:
+                saved_settings[camera_id] = {}
+            if 'calibration' not in saved_settings[camera_id]:
+                saved_settings[camera_id]['calibration'] = {}
+            calibration = saved_settings[camera_id]['calibration']
+
+            # Store tilt as negated and yaw shifted by +180° per new convention
             stored_tilt = float(-tilt_deg)
             stored_yaw = float(yaw_deg + 180.0)
             print(f"[DEBUG] Perspective save: raw tilt={tilt_deg:.2f}°, yaw={yaw_deg:.2f}° → stored tilt={stored_tilt:.2f}°, yaw={stored_yaw:.2f}°")
 
-            # Get camera_matrix (use geometric if available, else self.camera_matrix)
-            cam_geom = appSettings.get_active_camera_settings().get('calibration', {}).get('geometric', {}).get('camera_matrix')
-            cam_mat = np.array(cam_geom, dtype=np.float64)
-            
-            print(f"[DEBUG] Camera matrix for translate calc: {'LOADED' if cam_mat is not None else 'MISSING'}")
-            if cam_mat is not None:
-                print(f"[DEBUG] Camera matrix fx={cam_mat[0,0]:.2f}, fy={cam_mat[1,1]:.2f}, cx={cam_mat[0,2]:.2f}, cy={cam_mat[1,2]:.2f}")
+            # Compute minimal translation to make projected corners visible (dummy values for now)
+            # TODO: Replace with actual translation calculation if needed
+            translate_x = 0
+            translate_y = 0
 
+            # Save perspective calibration as a subkey of calibration
+            calibration['perspective'] = {
+                'tilt_deg': stored_tilt,
+                'yaw_deg': stored_yaw,
+                'scale_mm_per_pixel': scale_mm_per_pixel,
+                'successful_images': successful_count,
+                'translate_x': translate_x,
+                'translate_y': translate_y
+            }
 
-            # Compute minimal translation to make projected corners visible
-            try:
-                saved_settings = rectifyHelper.update_perspective_translation_in_settings(
-                    stored_tilt,
-                    stored_yaw,
-                    scale_mm_per_pixel,
-                    successful_count
-                )
-            except Exception as e:
-                print(f"[WARNING] Failed to compute translate_x/translate_y automatically: {e}")
-                import traceback
-                traceback.print_exc()
-
-            # DEBUG: Log values that will be saved now handled in rectifyHelper.update_perspective_translation_in_settings
-
-            # Speichere zu Datei
+            # Save to file
             print("[DEBUG] Calling appSettings.save_camera_settings(...) to persist perspective calibration")
             appSettings.save_camera_settings(saved_settings)
             print(f"[SUCCESS] Perspective calibration saved for camera_id={camera_id}")
-            
+
             # Update Dialog
             self.calibration_dialog.dialog_ui.lTitle.setText("Perspective Calibration Complete")
             result_text = f"Calibration successful!\n\n"

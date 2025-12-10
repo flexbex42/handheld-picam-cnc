@@ -51,7 +51,7 @@ def setup_camera():
     return cam, cam_id, cam_settings
 
 # Called in caliSelect.py lines 59, 61 and main.py lines 83, 85
-def get_active_camera_info(max_devices=10):
+def update_active_camera_info(max_devices=10):
     """
     Returns (camera_id, device_number) for the active camera.
     Logic:

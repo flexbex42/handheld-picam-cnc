@@ -66,7 +66,8 @@ def get_default_calibration_settings():
     """Return default calibration settings."""
     return {
         "checkerboard_boxes": {"x": 11, "y": 8},
-        "checkerboard_dim": {"size_mm": 5}
+        "checkerboard_dim": {"size_mm": 5},
+        "num_offset_marker": 4
     }
 
 
@@ -78,7 +79,11 @@ def load_app_settings():
         print("[LOG] No settings file found, creating with defaults")
         settings = {}
         # Add default calibration_settings
-        settings["calibration_settings"] = get_default_calibration_settings()
+        settings["calibration_settings"] = {
+            "checkerboard_boxes": {"x": 11, "y": 8},
+            "checkerboard_dim": {"size_mm": 5},
+            "num_offset_marker": 4
+        }
         # Add default hardware_setting with screen_size
         settings["hardware_setting"] = {"screen_size": {"width": 640, "height": 480}}
         save_camera_settings(settings)

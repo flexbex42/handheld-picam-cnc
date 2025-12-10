@@ -32,12 +32,7 @@
                         -14.924412777468719
                     ]
                 ],
-                "reprojection_error": 0.07775309028955273,
-                "checkerboard_size": [
-                    10,
-                    7
-                ],
-                "num_images": 15
+                "reprojection_error": 0.07775309028955273
             },
             "perspective": {
                 "tilt_deg": -5.900446365633646,
@@ -56,7 +51,8 @@
         },
         "checkerboard_dim": {
             "size_mm": 5
-        }
+        },
+        "num_offset_marker": 4
     },
     "hardware_setting": {
         "screen_size": {
@@ -97,12 +93,7 @@
                         -14.924412777468719
                     ]
                 ],
-                "reprojection_error": 0.07775309028955273,
-                "checkerboard_size": [
-                    10,
-                    7
-                ],
-                "num_images": 15
+                "reprojection_error": 0.07775309028955273
             },
             "perspective": {
                 "tilt_deg": -5.294369391243056,

@@ -57,9 +57,9 @@ class CalibrationSelectWindow(QWidget):
     
     def update_camera_status(self):
         """Update Checkboxen mit Kamera-Status und Kalibrierungs-Status"""
-        from camera import get_active_camera_info
+        
         saved_settings = appSettings.load_app_settings()
-        result = get_active_camera_info()
+        result = camera.update_active_camera_info()
         mcu_detected = False
         mcu_calibrated = False  # Wird später implementiert
         has_geometric = False
@@ -113,7 +113,8 @@ class CalibrationSelectWindow(QWidget):
                     self.ui.cbGeometric.setText("Calibrate Geometric")
                     self.ui.cbGeometric.setStyleSheet("QCheckBox { color: orange; }")
                 # Perspective
-                if "perspective" in calibration_data and calibration_data["perspective"]:
+                perspective = calibration_data.get("perspective", None)
+                if perspective:
                     self.ui.cbSize.setChecked(True)
                     self.ui.cbSize.setText("Perspective: OK")
                     self.ui.cbSize.setStyleSheet("QCheckBox { color: green; }")

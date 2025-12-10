@@ -50,6 +50,7 @@ class CalibrationOffsetWindow(QWidget):
         self.current_marker_btn = btn_name
         self.current_marker = (x, y)
         self.marker_moving = False
+        self.last_marker_btn_name = btn_name  # Track which button the marker is for
         # Zoom 4x on marker
         self.zoom_level = 4.0
         self.zoom_to_position(x, y)
@@ -101,6 +102,7 @@ class CalibrationOffsetWindow(QWidget):
                         self.zoom_level = 4.0
                         self.zoom_to_position(x, y)
                         self.start_marker_workflow(btn_name, x, y)
+
                 return True
             elif self.marker_workflow_active:
                 # Allow unlimited repositioning of marker until Accept/Decline
@@ -199,6 +201,23 @@ class CalibrationOffsetWindow(QWidget):
 
         # Setup marker logic
         self.setup_marker_logic()
+
+        # --- Offset marker counters and label setup ---
+        # Load num_offset_marker from appSettings
+        from appSettings import get_calibration_settings
+        self.num_offset_marker = get_calibration_settings().get('num_offset_marker', 4)
+        # Initialize counters for each label
+        self.marker_counters = {
+            'lXt': 0,
+            'lXb': 0,
+            'lYl': 0,
+            'lYr': 0
+        }
+        # Set initial label text
+        self.ui.lXt.setText(f"0/{self.num_offset_marker}")
+        self.ui.lXb.setText(f"0/{self.num_offset_marker}")
+        self.ui.lYl.setText(f"0/{self.num_offset_marker}")
+        self.ui.lYr.setText(f"0/{self.num_offset_marker}")
     
     def showEvent(self, event):
         """Override showEvent to ensure buttons are visible"""
@@ -223,8 +242,6 @@ class CalibrationOffsetWindow(QWidget):
         # Schiebe GraphicsView nach hinten in der Z-Order
         self.ui.gvCamera.lower()
         
-        # Style Counter (orange und bold, wie in caliDistortion)
-        self.ui.lCount.setStyleSheet("QLabel { color: orange; font-weight: bold; font-size: 16pt; }")
         
         # Ersetze Buttons durch RoundedButton mit echter runder Hit-Area
         # NICHT bExit - der ist im Layout und bleibt wie er ist
@@ -258,7 +275,26 @@ class CalibrationOffsetWindow(QWidget):
                     btn.hide()
         except Exception:
             # Non-fatal: if any button is missing, continue
-            pass
+            # When Accept is pressed, finalize marker placement and update counter/label
+            if self.current_marker_btn:
+                label_map = {
+                    'bXT': 'lXt',
+                    'bXB': 'lXb',
+                    'bYL': 'lYl',
+                    'bYR': 'lYr'
+                }
+                label_name = label_map.get(self.current_marker_btn)
+                if label_name:
+                    self.marker_counters[label_name] += 1
+                    label_widget = getattr(self.ui, label_name)
+                    label_widget.setText(f"{self.marker_counters[label_name]}/{self.num_offset_marker}")
+                    # Update label color: green if enough, else orange
+                    if self.marker_counters[label_name] >= self.num_offset_marker:
+                        label_widget.setStyleSheet("QLabel { color: green; font-weight: bold; font-size: 16pt; }")
+                    else:
+                        label_widget.setStyleSheet("QLabel { color: orange; font-weight: bold; font-size: 16pt; }")
+            # Reset marker workflow after accepting
+            self.reset_marker_workflow()
 
         # Ensure Exit and Sample remain visible
         try:
@@ -401,19 +437,16 @@ class CalibrationOffsetWindow(QWidget):
         cv2.imwrite(out_path_orig, avg)
         print(f"[LOG] Saved original sample to: {out_path_orig}")
 
-        # Apply camera corrections and perspective rectification using rectificationHelper
+        # Apply camera corrections (undistortion only)
         cam_id = self.camera.get_camera_id()
         settings = appSettings.load_app_settings()
-        cam_settings = settings.get(cam_id, {})
+        cam_settings = appSettings.get_active_camera_settings()
         geom = cam_settings.get('calibration', {}).get('geometric', {})
         camera_matrix = None
         dist_coeffs = None
         if 'camera_matrix' in geom and 'dist_coeffs' in geom:
             camera_matrix = np.array(geom['camera_matrix'], dtype=np.float64)
             dist_coeffs = np.array(geom['dist_coeffs'], dtype=np.float64).reshape(-1)
-        pers = cam_settings.get('calibration', {}).get('perspective', {})
-        tilt_deg = pers.get('tilt_deg')
-        yaw_deg = pers.get('yaw_deg')
         if camera_matrix is not None and dist_coeffs is not None:
             print("[LOG] Applying undistort only (no perspective)")
             undist = rectifyHelper.undistort_image(avg, camera_matrix, dist_coeffs)
@@ -424,33 +457,8 @@ class CalibrationOffsetWindow(QWidget):
             print("[LOG] No geometric calibration found - skipping undistort")
             undist = avg
 
-        # Convert to QPixmap and show in scene (replace live feed)
+        # Display the undistorted (or original) image in the scene
         try:
-            # Save rectified output so it's persisted for tools and inspection
-            try:
-                sample_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'sample'))
-                os.makedirs(sample_dir, exist_ok=True)
-                out_path_full = os.path.join(sample_dir, 'testimage_rectified_full.png')
-                cv2.imwrite(out_path_full, undist)
-                print(f"[LOG] Saved full rectified sample to: {out_path_full}")
-
-                # Crop a 640x480 region from the expanded image
-                crop_w, crop_h = 640, 480
-                # Use translation as top-left, clamp to bounds
-                x0 = int(translate_x) if translate_x is not None else 0
-                y0 = int(translate_y) if translate_y is not None else 0
-                x0 = max(0, min(x0, undist.shape[1] - crop_w))
-                y0 = max(0, min(y0, undist.shape[0] - crop_h))
-                cropped = undist[y0:y0+crop_h, x0:x0+crop_w]
-                out_path_crop = os.path.join(sample_dir, 'testimage_rectified_cropped.png')
-                cv2.imwrite(out_path_crop, cropped)
-                print(f"[LOG] Saved cropped rectified sample to: {out_path_crop}")
-
-                # Display the cropped image
-                undist = cropped
-            except Exception as _e:
-                print(f"[WARN] Could not save rectified sample: {_e}")
-
             frame_rgb = cv2.cvtColor(undist, cv2.COLOR_BGR2RGB)
             h, w, ch = frame_rgb.shape
             bytes_per_line = ch * w
@@ -492,7 +500,24 @@ class CalibrationOffsetWindow(QWidget):
     def on_accept_clicked(self):
         """Accept Button: Speichere Marker und beende Workflow"""
         print("[LOG] Accept Marker")
-        # Marker is already stored in self.markers
+        # Only increment counter and update label for the last marker placed
+        if hasattr(self, 'last_marker_btn_name'):
+            label_map = {
+                'bXT': 'lXt',
+                'bXB': 'lXb',
+                'bYL': 'lYl',
+                'bYR': 'lYr'
+            }
+            label_name = label_map.get(self.last_marker_btn_name)
+            if label_name:
+                self.marker_counters[label_name] += 1
+                label_widget = getattr(self.ui, label_name)
+                label_widget.setText(f"{self.marker_counters[label_name]}/{self.num_offset_marker}")
+                # Update label color: green if enough, else orange
+                if self.marker_counters[label_name] >= self.num_offset_marker:
+                    label_widget.setStyleSheet("QLabel { color: green; font-weight: bold; font-size: 16pt; }")
+                else:
+                    label_widget.setStyleSheet("QLabel { color: orange; font-weight: bold; font-size: 16pt; }")
         self.reset_marker_workflow()
 
     

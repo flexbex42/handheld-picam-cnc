@@ -81,9 +81,9 @@ class MainApp(QMainWindow):
         
     def update_camera_status(self):
         """Update Checkboxes mit Kamera-Status und MCU-Status"""
-        from camera import get_active_camera_info
+        from camera import update_active_camera_info
         saved_settings = appSettings.load_app_settings()
-        result = get_active_camera_info()
+        result = update_active_camera_info()
         if result is None:
             # No camera found
             self.main_ui.cbCamera.setChecked(False)

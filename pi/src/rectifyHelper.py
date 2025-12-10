@@ -1,3 +1,62 @@
+def compute_world_axes_from_markers(markers, scale_mm_per_pixel=1.0):
+    """
+    Given four marker lines (xt, xb, yl, yr) as lists of points in camera pixel coordinates,
+    compute the world axes (Xw, Yw), Az (rotation around z), and (xo, yo) offset in mm.
+    Markers: dict with keys 'xt', 'xb', 'yl', 'yr', each value is a list of (xc, yc) points.
+    The image origin (0,0) is at the image center.
+    scale_mm_per_pixel: conversion factor from pixels to mm.
+    Returns: Az (deg), xo (mm), yo (mm)
+    """
+    import numpy as np
+
+    # Convert marker lists to arrays
+    xt = np.array(markers['xt'], dtype=np.float64)
+    xb = np.array(markers['xb'], dtype=np.float64)
+    yl = np.array(markers['yl'], dtype=np.float64)
+    yr = np.array(markers['yr'], dtype=np.float64)
+
+    # Optionally, get image shape from markers if available (for center origin)
+    # Here, assume user has already centered coordinates, or pass image_shape as argument if needed
+
+    # Fit lines (least squares) to each marker set: y = m*x + b
+    def fit_line(points):
+        x = points[:,0]
+        y = points[:,1]
+        A = np.vstack([x, np.ones_like(x)]).T
+        m, b = np.linalg.lstsq(A, y, rcond=None)[0]
+        return m, b
+
+    # Fit lines to xt and xb
+    m_xt, b_xt = fit_line(xt)
+    m_xb, b_xb = fit_line(xb)
+
+    # Xw is horizontal, y = (b_xt + b_xb)/2, m = (m_xt + m_xb)/2 (should be ~0)
+    m_xw = (m_xt + m_xb) / 2
+    b_xw = (b_xt + b_xb) / 2
+
+    # For yl and yr, get mean x for each (vertical lines)
+    yl_x_mean = np.mean(yl[:,0])
+    yr_x_mean = np.mean(yr[:,0])
+    # Yw is the vertical line at x = (yl_x_mean + yr_x_mean)/2
+    yw_x = (yl_x_mean + yr_x_mean) / 2
+
+    # The origin is the intersection of Xw and Yw
+    # Xw: y = m_xw * x + b_xw
+    # Yw: x = yw_x
+    # So origin = (yw_x, m_xw * yw_x + b_xw)
+    origin_x = yw_x
+    origin_y = m_xw * yw_x + b_xw
+    origin = np.array([origin_x, origin_y])
+
+    # Azimuth: angle between camera X axis and Xw (should be ~0 for horizontal)
+    Az_rad = np.arctan2(m_xw, 1.0)  # tan(theta) = m_xw
+    Az = np.degrees(Az_rad)
+
+    # Offset from image center (origin is in pixel coordinates, with (0,0) at center)
+    xo = origin[0] * scale_mm_per_pixel
+    yo = origin[1] * scale_mm_per_pixel
+
+    return Az, xo, yo
 
 import appSettings
 
@@ -143,83 +202,6 @@ def compute_perspective_from_samples(sample_dir, max_samples, checkerboard_sizes
     scale_mm_per_pixel = square_size / avg_dist_px
     return True, tilt_deg, yaw_deg, scale_mm_per_pixel, successful_images
 
-
- # Not used
-def rectify_image(img, camera_matrix, dist_coeffs, tilt_deg=None, yaw_deg=None, translate_x=None, translate_y=None):
-    """Apply undistortion, perspective rectification, and translation to an image."""
-    undist = undistort_image(img, camera_matrix, dist_coeffs)
-    if tilt_deg is not None and yaw_deg is not None:
-        h, w = undist.shape[:2]
-        fx = camera_matrix[0, 0]
-        fy = camera_matrix[1, 1]
-        cx = camera_matrix[0, 2]
-        cy = camera_matrix[1, 2]
-        tilt_rad = np.deg2rad(tilt_deg)
-        yaw_rad = np.deg2rad(yaw_deg)
-        c_t = np.cos(tilt_rad)
-        s_t = np.sin(tilt_rad)
-        c_y = np.cos(yaw_rad)
-        s_y = np.sin(yaw_rad)
-        col0 = np.array([c_t * c_y, c_t * s_y, -s_t], dtype=np.float64)
-        cand_col1_a = np.array([-s_y, c_y, 0.0], dtype=np.float64)
-        cand_col1_b = np.array([s_y, -c_y, 0.0], dtype=np.float64)
-        def build_R(col1):
-            col1n = col1 / (np.linalg.norm(col1) + 1e-12)
-            col2 = np.cross(col0, col1n)
-            R = np.column_stack((col0, col1n, col2))
-            U, _, Vt = np.linalg.svd(R)
-            R_ortho = U @ Vt
-            return R_ortho
-        R_a = build_R(cand_col1_a)
-        R_b = build_R(cand_col1_b)
-        z_a = np.arctan2(R_a[1, 0], R_a[0, 0])
-        z_b = np.arctan2(R_b[1, 0], R_b[0, 0])
-        R_recon = R_a if abs(z_a) <= abs(z_b) else R_b
-        src_corners = np.array([[0.0, 0.0], [w - 1.0, 0.0], [w - 1.0, h - 1.0], [0.0, h - 1.0]], dtype=np.float32)
-        dst_corners = []
-        R_inv = R_recon.T
-        for (u, v) in src_corners:
-            x = (u - cx) / fx
-            y = (v - cy) / fy
-            vec = np.array([x, y, 1.0], dtype=np.float64)
-            vec_rot = R_inv @ vec
-            if abs(vec_rot[2]) < 1e-9:
-                u2 = cx
-                v2 = cy
-            else:
-                u2 = fx * (vec_rot[0] / vec_rot[2]) + cx
-                v2 = fy * (vec_rot[1] / vec_rot[2]) + cy
-            dst_corners.append([u2, v2])
-        dst_corners = np.array(dst_corners, dtype=np.float32)
-        H = cv2.getPerspectiveTransform(src_corners, dst_corners)
-        undist = cv2.warpPerspective(undist, H, (w, h), flags=cv2.INTER_LINEAR)
-    # Apply translation if provided
-    if translate_x is not None and translate_y is not None:
-        h, w = undist.shape[:2]
-        tx = int(translate_x)
-        ty = int(translate_y)
-        # Berechne die neue Bildgröße so, dass negative Offsets auch sichtbar werden
-        left_pad = max(-tx, 0)
-        top_pad = max(-ty, 0)
-        right_pad = max(tx, 0)
-        bottom_pad = max(ty, 0)
-        new_w = w + left_pad + right_pad
-        new_h = h + top_pad + bottom_pad
-        # Hintergrund auf weiß setzen
-        if undist.ndim == 3:
-            expanded = np.full((new_h, new_w, undist.shape[2]), 255, dtype=undist.dtype)
-        else:
-            expanded = np.full((new_h, new_w), 255, dtype=undist.dtype)
-        # Zielposition für das Originalbild im neuen Bild
-        x_start = left_pad if tx >= 0 else 0
-        y_start = top_pad if ty >= 0 else 0
-        expanded[y_start:y_start+h, x_start:x_start+w] = undist
-        undist = expanded
-        # Bild nach Translation um 180 Grad drehen
-        undist = cv2.rotate(undist, cv2.ROTATE_180)
-        # Bild um 180 Grad drehen
-        undist = cv2.rotate(undist, cv2.ROTATE_180)
-    return undist
 
 
 

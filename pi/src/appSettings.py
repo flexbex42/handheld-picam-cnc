@@ -4,65 +4,75 @@ Centralized settings file management for the application.
 Handles camera selection, calibration settings, and global config.
 """
 
+# Imports
 import os
 import json
 import subprocess
 
-# Settings File Path (relative to src/)
+from pydantic import BaseSettings
+
+# Constants and global variables
 SETTINGS_FILE = os.path.join(os.path.dirname(__file__), "..", "res", "app_settings.json")
+_ACTIVE_CAMERA_INDEX = None
+_ACTIVE_CAMERA_ID = None
 
-# Global variable for selected camera (runtime only)
-_SELECTED_CAMERA_INDEX = None
-_SELECTED_CAMERA_ID = None
+# Global debug flags
+_DEBUG_MODE = False
+_DEBUG_NO_CAM = False
 
+# Debug flag updater (call at startup)
+def update_debug_flags():
+    """
+    Update debug flags from environment variables.
+    Set APP_DEBUG_MODE=1 and/or APP_DEBUG_NO_CAM=1 in your environment to enable.
+    """
+    global _DEBUG_MODE, _DEBUG_NO_CAM
+    _DEBUG_MODE = os.environ.get("APP_DEBUG_MODE", "0") in ("1", "true", "True")
+    _DEBUG_NO_CAM = os.environ.get("APP_DEBUG_NO_CAM", "0") in ("1", "true", "True")
 
-def set_selected_camera(camera_index, camera_id):
-    """Set the currently selected camera (global for all windows) and persist to settings file."""
-    global _SELECTED_CAMERA_INDEX, _SELECTED_CAMERA_ID
-    _SELECTED_CAMERA_INDEX = camera_index
-    _SELECTED_CAMERA_ID = camera_id
-    print(f"[LOG] Selected camera set to index={camera_index}, id={camera_id}")
-    try:
-        settings = load_camera_settings()
-        settings['active_camera'] = {'id': camera_id, 'device': camera_index}
-        save_camera_settings(settings)
-        print(f"[LOG] Persisted active_camera to settings: id={camera_id}, device={camera_index}")
-    except Exception as e:
-        print(f"[ERROR] Could not persist active_camera to settings: {e}")
+# Debug flag getters
+def is_debug_mode():
+    return _DEBUG_MODE
 
+def is_debug_no_cam():
+    return _DEBUG_NO_CAM
 
-def get_selected_camera():
-    """Get the currently selected camera (index, id) from runtime globals."""
-    return _SELECTED_CAMERA_INDEX, _SELECTED_CAMERA_ID
-
-
-def get_camera_id(camera_index):
-    """Get unique camera ID (Serial Number or USB Path) for a given index."""
-    try:
-        video_device = f"/dev/video{camera_index}"
-        result = subprocess.run(
-            ['udevadm', 'info', '--query=property', '--name', video_device],
-            capture_output=True,
-            text=True,
-            timeout=2
-        )
-        if result.returncode == 0:
-            serial = None
-            path = None
-            for line in result.stdout.split('\n'):
-                if line.startswith('ID_SERIAL='):
-                    serial = line.split('=', 1)[1]
-                elif line.startswith('ID_PATH='):
-                    path = line.split('=', 1)[1]
-            camera_id = serial or path or f"video{camera_index}"
-            print(f"[LOG] Camera {camera_index} ID: {camera_id}")
-            return camera_id
-    except Exception as e:
-        print(f"[ERROR] Could not get camera ID: {e}")
-    return f"video{camera_index}"
+# Init functions (helpers)
+# Used in caliDistortion.py, caliPerspective.py, camera.py (checkerboard config for calibration)
+def get_checkerboard_config():
+    """Return (checkerboard_size, square_size_mm) from calibration settings, with defaults."""
+    calib_settings = get_calibration_settings()
+    if calib_settings:
+        checkerboard_boxes = calib_settings.get("checkerboard_boxes", {"x": 11, "y": 8})
+        checkerboard_dim = calib_settings.get("checkerboard_dim", {"size_mm": 5})
+        checkerboard_size = (checkerboard_boxes["x"] - 1, checkerboard_boxes["y"] - 1)
+        square_size = checkerboard_dim["size_mm"]
+    else:
+        checkerboard_size = (10, 7)
+        square_size = 5
+    return checkerboard_size, square_size
 
 
-def load_camera_settings():
+# Used in caliDistortion.py, caliPerspective.py, camera.py (load calibration settings)
+def get_calibration_settings():
+    """Get calibration settings from config."""
+    settings = load_app_settings()
+    if "calibration_settings" in settings:
+        return settings["calibration_settings"]
+    return get_default_calibration_settings()
+
+# Used in appSettings.py (default fallback for calibration settings)
+def get_default_calibration_settings():
+    """Return default calibration settings."""
+    return {
+        "checkerboard_boxes": {"x": 11, "y": 8},
+        "checkerboard_dim": {"size_mm": 5}
+    }
+
+
+
+# Used in caliDevice.py, camera.py, main.py, caliSelect.py (load all app settings)
+def load_app_settings():
     """Load saved camera settings from JSON file."""
     if not os.path.exists(SETTINGS_FILE):
         print("[LOG] No settings file found, creating with defaults")
@@ -87,26 +97,41 @@ def load_camera_settings():
         return {}
 
 
-def get_default_calibration_settings():
-    """Return default calibration settings."""
-    return {
-        "checkerboard_boxes": {"x": 11, "y": 8},
-        "checkerboard_dim": {"size_mm": 5}
-    }
+
+# Used in caliDevice.py, camera.py, main.py (read hardware settings)
 def get_hardware_settings():
     """Return hardware_setting from app settings (read-only)."""
-    settings = load_camera_settings()
+    settings = load_app_settings()
     return settings.get("hardware_setting", {})
 
 
-def get_calibration_settings():
-    """Get calibration settings from config."""
-    settings = load_camera_settings()
-    if "calibration_settings" in settings:
-        return settings["calibration_settings"]
-    return get_default_calibration_settings()
+# Used in caliDevice.py, main.py, camera.py (set selected camera globally)
+def set_active_camera(camera_index, camera_id):
+    """Set the currently selected camera (global for all windows) and persist to settings file."""
+    global _ACTIVE_CAMERA_INDEX, _ACTIVE_CAMERA_ID
+    _ACTIVE_CAMERA_INDEX = camera_index
+    _ACTIVE_CAMERA_ID = camera_id
+    print(f"[LOG] Selected camera set to index={camera_index}, id={camera_id}")
+    try:
+        settings = load_app_settings()
+        settings['active_camera'] = {'id': camera_id, 'device': camera_index}
+        save_camera_settings(settings)
+        print(f"[LOG] Persisted active_camera to settings: id={camera_id}, device={camera_index}")
+    except Exception as e:
+        print(f"[ERROR] Could not persist active_camera to settings: {e}")
 
 
+# Used in caliDevice.py, camera.py, main.py (get selected camera index and id)
+def get_active_camera():
+    """Get the currently selected camera (index, id) from runtime globals."""
+    return _ACTIVE_CAMERA_INDEX, _ACTIVE_CAMERA_ID
+
+# Used in camera.py, main.py (get selected camera id only)
+def get_active_camera_id():
+    return _ACTIVE_CAMERA_ID
+
+
+# Used in caliDevice.py, camera.py, main.py (save all app settings to disk)
 def save_camera_settings(settings):
     """Save camera settings to JSON file."""
     try:
@@ -122,6 +147,7 @@ def save_camera_settings(settings):
         return False
 
 
+# Used in caliDevice.py (save current camera settings and calibration)
 def save_current_camera_settings(saved_settings, camera_id, camera_index, current_format, current_resolution, current_fps):
     """Update and save camera settings, including calibration and active_camera."""
     if not camera_id:
@@ -157,10 +183,32 @@ def save_current_camera_settings(saved_settings, camera_id, camera_index, curren
     try:
         saved_settings['active_camera'] = {'id': camera_id, 'device': camera_index}
     except Exception:
-        saved_settings = load_camera_settings()
+        saved_settings = load_app_settings()
         saved_settings['active_camera'] = {'id': camera_id, 'device': camera_index}
 
     if save_camera_settings(saved_settings):
         print(f"[LOG] Saved settings for camera {camera_id}")
     else:
         print(f"[ERROR] Failed to save settings")
+
+
+
+
+# Used in caliPerspective.py, camera.py, caliDevice.py (get settings for a specific camera)
+def get_camera_settings(camera_id):
+    """Return the settings dict for the given camera_id from the app settings file, or an empty dict if not found."""
+    settings = load_app_settings()
+    return settings.get(camera_id, {})
+
+def get_active_camera_settings():
+    settings = load_app_settings()
+    return settings.get(_ACTIVE_CAMERA_ID, {})
+
+# Used in caliPerspective.py, camera.py, caliDevice.py (get calibration for a specific camera)
+def get_camera_calibration(camera_id):
+    """Return the calibration dict for the given camera_id from the app settings file, or an empty dict if not found."""
+    if camera_id is None:
+        camera_id=get_active_camera()
+    settings = load_app_settings()
+    camera_settings = settings.get(camera_id, {})
+    return camera_settings.get('calibration', {})

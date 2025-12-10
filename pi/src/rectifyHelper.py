@@ -1,3 +1,6 @@
+
+import appSettings
+
 """
 rectificationHelper.py
 Centralized image rectification helpers for calibration windows.
@@ -14,22 +17,20 @@ import cv2
 import numpy as np
 import os
 
-def find_checkerboard_corners(img, checkerboard_sizes, detected_checkerboard_size=None):
-    """Try to find checkerboard corners in the image for all given sizes. Returns (found, size, corners)."""
-    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    sizes_to_try = list(checkerboard_sizes)
-    if detected_checkerboard_size and detected_checkerboard_size in sizes_to_try:
-        sizes_to_try.remove(detected_checkerboard_size)
-        sizes_to_try.insert(0, detected_checkerboard_size)
-    for size in sizes_to_try:
-        flags = cv2.CALIB_CB_ADAPTIVE_THRESH + cv2.CALIB_CB_NORMALIZE_IMAGE
-        ret, corners = cv2.findChessboardCorners(gray, size, flags)
-        if ret:
-            criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 30, 0.001)
-            corners2 = cv2.cornerSubPix(gray, corners, (11, 11), (-1, -1), criteria)
-            return True, size, corners2
-    return False, None, None
 
+
+
+ # Used in caliDistortion.py, caliOffset.py, caliPerspective.py (sample dir setup)
+def get_sample_dir():
+    """Return the absolute path to the sample directory."""
+    return os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "sample"))
+
+ # Used in caliDistortion.py, caliOffset.py, caliPerspective.py (ensure sample dir)
+def ensure_sample_dir(sample_dir):
+    """Ensure the sample directory exists."""
+    os.makedirs(sample_dir, exist_ok=True)
+
+ # Used in caliDistortion.py (camera calibration)
 def calibrate_camera_from_samples(sample_dir, max_samples, checkerboard_sizes, detected_checkerboard_size, square_size):
     """Calibrate camera using checkerboard images in sample_dir. Returns (success, camera_matrix, dist_coeffs, error, detected_size, successful_count)."""
     objpoints = []
@@ -67,10 +68,20 @@ def calibrate_camera_from_samples(sample_dir, max_samples, checkerboard_sizes, d
     mean_error /= len(objpoints)
     return True, camera_matrix, dist_coeffs, mean_error, detected_checkerboard_size, successful_images
 
+ # Used in caliOffset.py, caliPerspective.py, rectify_image, compute_perspective_from_samples (undistortion)
 def undistort_image(img, camera_matrix, dist_coeffs):
     """Apply camera undistortion to an image."""
+    camera_matrix = np.array(camera_matrix, dtype=np.float64)
+    dist_coeffs = np.array(dist_coeffs, dtype=np.float64)
+    if camera_matrix.shape != (3, 3):
+        print(f"[ERROR] camera_matrix shape invalid: {camera_matrix.shape}, expected (3, 3)")
+        return img
+    if dist_coeffs.ndim != 1 and dist_coeffs.shape[0] != 1:
+        print(f"[ERROR] dist_coeffs shape invalid: {dist_coeffs.shape}, expected 1D array")
+        return img
     return cv2.undistort(img, camera_matrix, dist_coeffs)
 
+ # Used in caliPerspective.py (tilt/yaw/scale from checkerboard)
 def compute_perspective_from_samples(sample_dir, max_samples, checkerboard_sizes, detected_checkerboard_size, square_size, camera_matrix, dist_coeffs):
     """Compute tilt, yaw, and scale from checkerboard images. Returns (success, tilt_deg, yaw_deg, scale_mm_per_pixel, successful_count)."""
     objpoints = []
@@ -132,8 +143,10 @@ def compute_perspective_from_samples(sample_dir, max_samples, checkerboard_sizes
     scale_mm_per_pixel = square_size / avg_dist_px
     return True, tilt_deg, yaw_deg, scale_mm_per_pixel, successful_images
 
-def rectify_image(img, camera_matrix, dist_coeffs, tilt_deg=None, yaw_deg=None):
-    """Apply undistortion and perspective rectification to an image."""
+
+ # Not used
+def rectify_image(img, camera_matrix, dist_coeffs, tilt_deg=None, yaw_deg=None, translate_x=None, translate_y=None):
+    """Apply undistortion, perspective rectification, and translation to an image."""
     undist = undistort_image(img, camera_matrix, dist_coeffs)
     if tilt_deg is not None and yaw_deg is not None:
         h, w = undist.shape[:2]
@@ -180,4 +193,49 @@ def rectify_image(img, camera_matrix, dist_coeffs, tilt_deg=None, yaw_deg=None):
         dst_corners = np.array(dst_corners, dtype=np.float32)
         H = cv2.getPerspectiveTransform(src_corners, dst_corners)
         undist = cv2.warpPerspective(undist, H, (w, h), flags=cv2.INTER_LINEAR)
+    # Apply translation if provided
+    if translate_x is not None and translate_y is not None:
+        h, w = undist.shape[:2]
+        tx = int(translate_x)
+        ty = int(translate_y)
+        # Berechne die neue Bildgröße so, dass negative Offsets auch sichtbar werden
+        left_pad = max(-tx, 0)
+        top_pad = max(-ty, 0)
+        right_pad = max(tx, 0)
+        bottom_pad = max(ty, 0)
+        new_w = w + left_pad + right_pad
+        new_h = h + top_pad + bottom_pad
+        # Hintergrund auf weiß setzen
+        if undist.ndim == 3:
+            expanded = np.full((new_h, new_w, undist.shape[2]), 255, dtype=undist.dtype)
+        else:
+            expanded = np.full((new_h, new_w), 255, dtype=undist.dtype)
+        # Zielposition für das Originalbild im neuen Bild
+        x_start = left_pad if tx >= 0 else 0
+        y_start = top_pad if ty >= 0 else 0
+        expanded[y_start:y_start+h, x_start:x_start+w] = undist
+        undist = expanded
+        # Bild nach Translation um 180 Grad drehen
+        undist = cv2.rotate(undist, cv2.ROTATE_180)
+        # Bild um 180 Grad drehen
+        undist = cv2.rotate(undist, cv2.ROTATE_180)
     return undist
+
+
+
+ # Used in calibrate_camera_from_samples, compute_perspective_from_samples, test scripts (checkerboard detection)
+def find_checkerboard_corners(img, checkerboard_sizes, detected_checkerboard_size=None):
+    """Try to find checkerboard corners in the image for all given sizes. Returns (found, size, corners)."""
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    sizes_to_try = list(checkerboard_sizes)
+    if detected_checkerboard_size and detected_checkerboard_size in sizes_to_try:
+        sizes_to_try.remove(detected_checkerboard_size)
+        sizes_to_try.insert(0, detected_checkerboard_size)
+    for size in sizes_to_try:
+        flags = cv2.CALIB_CB_ADAPTIVE_THRESH + cv2.CALIB_CB_NORMALIZE_IMAGE
+        ret, corners = cv2.findChessboardCorners(gray, size, flags)
+        if ret:
+            criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 30, 0.001)
+            corners2 = cv2.cornerSubPix(gray, corners, (11, 11), (-1, -1), criteria)
+            return True, size, corners2
+    return False, None, None

@@ -1,3 +1,5 @@
+# Ignore local application settings
+pi/app_settings.json
 # Prerequisites
 *.d
 

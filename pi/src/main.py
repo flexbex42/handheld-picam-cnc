@@ -15,7 +15,8 @@ from PyQt5.QtCore import Qt
 # Importiere die auto-generierten UIs
 from mainWin import Ui_MainWindow
 from caliDevice import SettingsWindow
-from appSettings import load_camera_settings, get_calibration_settings, set_selected_camera, get_selected_camera, get_hardware_settings
+import appSettings
+import camera
 from caliSelect import CalibrationSelectWindow
 
 
@@ -53,7 +54,7 @@ class MainApp(QMainWindow):
     
     def load_selected_camera_on_startup(self):
         """Lade die zuletzt ausgewählte Kamera beim Programmstart"""
-        saved_settings = load_camera_settings()
+        saved_settings = appSettings.load_app_settings()
 
         # Assume new 'active_camera' object exists in settings. If its id is empty,
         # treat this as no camera selected.
@@ -66,11 +67,11 @@ class MainApp(QMainWindow):
             for i in range(10):
                 video_path = f"/dev/video{i}"
                 if os.path.exists(video_path):
-                    camera_id = get_camera_id(i)
+                    camera_id = camera.get_camera_id(i)
                     if camera_id == selected_cam_id:
                         # Persistence of active camera will be handled by set_selected_camera()
                         # updating device number
-                        set_selected_camera(i, camera_id)
+                        appSettings.set_active_camera(i, camera_id)
                         print(f"[LOG] Loaded previously selected camera on startup: index={i}, id={camera_id}")
                         return
 
@@ -80,9 +81,9 @@ class MainApp(QMainWindow):
         
     def update_camera_status(self):
         """Update Checkboxes mit Kamera-Status und MCU-Status"""
-        from camera import get_active_camera
-        saved_settings = load_camera_settings()
-        result = get_active_camera()
+        from camera import get_active_camera_info
+        saved_settings = appSettings.load_app_settings()
+        result = get_active_camera_info()
         if result is None:
             # No camera found
             self.main_ui.cbCamera.setChecked(False)
@@ -253,7 +254,10 @@ class MainApp(QMainWindow):
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
-    
+
+    # Update debug flags from environment
+    appSettings.update_debug_flags()
+
     # Load stylesheet if it exists (in res/ folder, one level up from src/)
     stylesheet_path = os.path.join(os.path.dirname(__file__), "..", "res", "styles.qss")
     if os.path.exists(stylesheet_path):
@@ -262,24 +266,22 @@ if __name__ == "__main__":
             print(f"[LOG] Loaded stylesheet from {stylesheet_path}")
     else:
         print(f"[WARNING] Stylesheet not found at {stylesheet_path}")
-    
+
     window = MainApp()
-    
-    # Check für Debug-Modus (Laptop-Entwicklung)
-    debug_mode = os.environ.get('DEBUG_MODE', '0') == '1'
-    
-    if debug_mode:
+
+    # Use appSettings debug flag
+    if appSettings.is_debug_mode():
         # Hole Screen-Größe aus Kalibrierungs-Einstellungen
-        hardware_settings = get_hardware_settings()
+        hardware_settings = appSettings.get_hardware_settings()
         screen_size = hardware_settings.get("screen_size", {"width": 640, "height": 480})
         screen_width = screen_size["width"]
         screen_height = screen_size["height"]
-        
+
         print(f"[LOG] DEBUG_MODE aktiv - Fenster {screen_width}x{screen_height}, nicht Vollbild")
         window.setFixedSize(screen_width, screen_height)
         window.show()
     else:
         print("[LOG] Normal mode - Vollbild")
         window.showFullScreen()
-    
+
     sys.exit(app.exec_())

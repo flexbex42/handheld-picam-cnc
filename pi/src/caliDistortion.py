@@ -8,7 +8,7 @@ Calibration Distortion Window Logik
 import os
 import cv2
 import numpy as np
-from rectificationHelper import find_checkerboard_corners, calibrate_camera_from_samples
+import rectifyHelper
 import json
 import icons_rc  # Qt Resource File für Icons
 from PyQt5.QtWidgets import QWidget, QDialogButtonBox, QGraphicsScene, QApplication
@@ -16,7 +16,7 @@ from PyQt5.QtCore import QTimer, Qt, QThread, pyqtSignal
 from PyQt5.QtGui import QImage, QPixmap
 from caliDistortionWin import Ui_Form as Ui_CalibrationDistortionWindow
 from caliDialog import Ui_CalibrationDialog
-from appSettings import load_camera_settings, save_camera_settings, get_calibration_settings, get_hardware_settings
+import appSettings
 import camera
 
 
@@ -37,7 +37,7 @@ class ProcessingThread(QThread):
         """Verarbeite Fotos im Hintergrund (refactored to use rectificationHelper)."""
         try:
             self.progress_updated.emit("Processing calibration samples...")
-            result = calibrate_camera_from_samples(
+            result = rectifyHelper.calibrate_camera_from_samples(
                 self.sample_dir,
                 self.max_samples,
                 self.checkerboard_sizes,
@@ -80,44 +80,28 @@ class CalibrationDistortionWindow(QWidget):
         if self.layout():
             self.layout().setContentsMargins(0, 0, 0, 0)
         
-        # Kamera Setup
-        self.camera = None
-        self.camera_id = None
-        self.camera_settings = {}
+        # Kamera Setup (centralized)
+        self.camera, self.camera_id, self.camera_settings = camera.setup_camera()
         self.timer = None
-        
+
         # Kalibrierungs-Daten
-        self.sample_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "sample"))
+        self.sample_dir = rectifyHelper.get_sample_dir()
         self.max_samples = 15
         self.current_sample = 0
-        
-        # Erstelle sample-Verzeichnis falls nicht vorhanden
-        os.makedirs(self.sample_dir, exist_ok=True)
-        
-        # Lade Checkerboard-Konfiguration aus Settings
-        calib_settings = get_calibration_settings()
-        if calib_settings:
-            checkerboard_boxes = calib_settings.get("checkerboard_boxes", {"x": 11, "y": 8})
-            checkerboard_dim = calib_settings.get("checkerboard_dim", {"size_mm": 5})
-            
-            # Berechne innere Ecken (Boxen - 1)
-            self.checkerboard_size = (checkerboard_boxes["x"] - 1, checkerboard_boxes["y"] - 1)
-            self.square_size = checkerboard_dim["size_mm"]  # in mm
-            
-            print(f"[INFO] Distortion calibration using checkerboard from settings:")
-            print(f"  Boxes: {checkerboard_boxes['x']}x{checkerboard_boxes['y']} ({self.checkerboard_size[0]}x{self.checkerboard_size[1]} inner corners)")
-            print(f"  Square size: {self.square_size}mm")
-        else:
-            # Fallback wenn keine Settings vorhanden
-            print("[WARNING] No calibration settings found, using defaults: 11x8 boxes, 5mm squares")
-            self.checkerboard_size = (10, 7)  # Default: 11x8 boxes = 10x7 inner corners
-            self.square_size = 5  # Default: 5mm
-        
-        # Verwende nur die konfigurierte Checkerboard-Größe aus Settings
+
+        # Ensure sample directory exists
+        rectifyHelper.ensure_sample_dir(self.sample_dir)
+
+        # Load checkerboard config from appSettings (centralized)
+        self.checkerboard_size, self.square_size = appSettings.get_checkerboard_config()
+        print(f"[INFO] Distortion calibration using checkerboard from settings:")
+        print(f"  Boxes: {self.checkerboard_size[0]+1}x{self.checkerboard_size[1]+1} ({self.checkerboard_size[0]}x{self.checkerboard_size[1]} inner corners)")
+        print(f"  Square size: {self.square_size}mm")
+
         self.checkerboard_sizes = [self.checkerboard_size]
-        self.detected_checkerboard_size = None  # Wird beim ersten erfolgreichen Bild gesetzt
-        
-        # Kalibrierungs-Ergebnisse
+        self.detected_checkerboard_size = None  # Set on first successful image
+
+        # Calibration results
         self.camera_matrix = None
         self.dist_coeffs = None
         self.calibration_error = None
@@ -132,7 +116,7 @@ class CalibrationDistortionWindow(QWidget):
         self.setup_connections()
         
         # Initialisiere Kamera mit Camera-Klasse
-        self.camera = Camera()
+        self.camera = camera.Camera()
         if self.camera.open():
             self.camera_id = self.camera.get_camera_id()
             self.camera_settings = self.camera.get_camera_settings()
@@ -163,12 +147,11 @@ class CalibrationDistortionWindow(QWidget):
     def setup_ui(self):
         """Initialisiere UI-Elemente"""
         # Hole Screen-Größe aus Kalibrierungs-Einstellungen
-        hardware_settings = get_hardware_settings()
+        hardware_settings = appSettings.get_hardware_settings()
         screen_size = hardware_settings.get("screen_size", {"width": 640, "height": 480})
         screen_width = screen_size["width"]
         screen_height = screen_size["height"]
-        
-        print(f"[DEBUG] Using screen size from settings: {screen_width}x{screen_height}")
+
         print(f"[DEBUG] GraphicsView current size: {self.ui.gvCamera.width()}x{self.ui.gvCamera.height()}")
         
         # Erstelle QGraphicsScene für GraphicsView
@@ -386,7 +369,7 @@ class CalibrationDistortionWindow(QWidget):
         print("[LOG] Saving calibration data...")
         
         # Lade aktuelle Settings
-        saved_settings = load_camera_settings()
+        saved_settings = appSettings.load_app_settings()
         
         # Stelle sicher dass Calibration-Dict existiert
         if "calibration" not in saved_settings[self.camera_id]:
@@ -402,7 +385,7 @@ class CalibrationDistortionWindow(QWidget):
         }
         
         # Speichere zu Datei
-        save_camera_settings(saved_settings)
+        appSettings.save_camera_settings(saved_settings)
         
         print("[LOG] Calibration data saved")
         print("[INFO] Sample photos kept in /home/flex/uis/sample/ for review")

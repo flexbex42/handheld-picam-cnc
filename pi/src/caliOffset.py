@@ -10,18 +10,132 @@ Calibration Offset Window Logik
 import os
 import cv2
 import numpy as np
-from rectificationHelper import undistort_image, rectify_image
+import rectifyHelper
 from PyQt5.QtWidgets import QWidget, QGraphicsScene, QApplication
 from PyQt5.QtCore import QTimer, Qt
-from PyQt5.QtGui import QImage, QPixmap
+from PyQt5.QtGui import QImage, QPixmap, QTransform
 from caliOffsetWin import Ui_Form as Ui_CalibrationOffsetWindow
-from appSettings import load_camera_settings, get_calibration_settings, get_hardware_settings
+import appSettings
 import camera
 from roundbutton import RoundedButton
 
 
 class CalibrationOffsetWindow(QWidget):
     """Offset Calibration Window mit Kamera-Feed"""
+
+    def reset_marker_workflow(self):
+        self.marker_workflow_active = False
+        self.current_marker = None
+        self.current_marker_btn = None
+        self.marker_moving = False
+        # Hide Accept/Decline
+        self.ui.bAccept.hide()
+        self.ui.bDecline.hide()
+        # Show offset buttons only if bSampel is checked
+        if hasattr(self.ui, 'bSampel') and self.ui.bSampel.isChecked():
+            for btn in self.offset_buttons:
+                btn.show()
+        else:
+            for btn in self.offset_buttons:
+                btn.hide()
+        # Reset zoom to 1x
+        self.zoom_level = 1.0
+        # Reset view transform and center on full image
+        transform = QTransform()
+        self.ui.gvCamera.setTransform(transform)
+        self.ui.gvCamera.centerOn(self.scene.sceneRect().center())
+
+    def start_marker_workflow(self, btn_name, x, y):
+        self.marker_workflow_active = True
+        self.current_marker_btn = btn_name
+        self.current_marker = (x, y)
+        self.marker_moving = False
+        # Zoom 4x on marker
+        self.zoom_level = 4.0
+        self.zoom_to_position(x, y)
+        # Hide offset buttons
+        for btn in self.offset_buttons:
+            btn.hide()
+        # Show Accept/Decline
+        self.ui.bAccept.show()
+        self.ui.bDecline.show()
+
+    def zoom_to_position(self, x, y):
+        # Center the view on (x, y) and apply zoom using QTransform
+        self.ui.gvCamera.centerOn(x, y)
+        transform = QTransform()
+        transform.scale(self.zoom_level, self.zoom_level)
+        self.ui.gvCamera.setTransform(transform)
+
+    def eventFilter(self, obj, event):
+        if obj == self.ui.gvCamera.viewport() and event.type() == event.MouseButtonPress:
+            pos = event.pos()
+            scene_pos = self.ui.gvCamera.mapToScene(pos)
+            x, y = scene_pos.x(), scene_pos.y()
+            if not hasattr(self, 'marker_workflow_active'):
+                self.reset_marker_workflow()
+            # Marker placement workflow
+            if not self.marker_workflow_active:
+                # Place marker for active button
+                active_btn = self.active_offset_button
+                if active_btn is not None:
+                    btn_name = self.button_to_name.get(active_btn)
+                    if btn_name:
+                        self.markers[btn_name].append((x, y))
+                        color_map = {
+                            'bXT': Qt.red,
+                            'bXB': Qt.blue,
+                            'bYL': Qt.green,
+                            'bYR': Qt.yellow
+                        }
+                        marker_color = color_map.get(btn_name, Qt.white)
+                        radius = 8
+                        # Draw crosshair: two lines intersecting at (x, y)
+                        h_line = self.scene.addLine(x-radius, y, x+radius, y, pen=marker_color)
+                        v_line = self.scene.addLine(x, y-radius, x, y+radius, pen=marker_color)
+                        # Optionally, add a small center dot for visibility
+                        dot = self.scene.addEllipse(x-2, y-2, 4, 4, pen=marker_color, brush=marker_color)
+                        # Store marker items as a tuple
+                        self.current_marker_item = (h_line, v_line, dot)
+                        # Immediately zoom 4x on marker position
+                        self.zoom_level = 4.0
+                        self.zoom_to_position(x, y)
+                        self.start_marker_workflow(btn_name, x, y)
+                return True
+            elif self.marker_workflow_active:
+                # Allow unlimited repositioning of marker until Accept/Decline
+                self.current_marker = (x, y)
+                # Move crosshair and dot to new position
+                h_line, v_line, dot = self.current_marker_item
+                radius = 8
+                h_line.setLine(x-radius, y, x+radius, y)
+                v_line.setLine(x, y-radius, x, y+radius)
+                dot.setRect(x-2, y-2, 4, 4)
+                self.zoom_to_position(x, y)
+                return True
+            return False
+        return super().eventFilter(obj, event)
+    """Offset Calibration Window mit Kamera-Feed"""
+
+    def setup_marker_logic(self):
+        """Setup marker storage and mouse event for placing markers on the image."""
+        # Dictionary to store markers for each button
+        self.markers = {
+            'bXT': [],
+            'bXB': [],
+            'bYL': [],
+            'bYR': []
+        }
+        # Map button objects to names
+        self.button_to_name = {
+            self.ui.bXT: 'bXT',
+            self.ui.bXB: 'bXB',
+            self.ui.bYL: 'bYL',
+            self.ui.bYR: 'bYR'
+        }
+        # Install event filter on the QGraphicsView
+        self.ui.gvCamera.viewport().installEventFilter(self)
+
     
     def __init__(self, parent=None, on_back_callback=None):
         super().__init__(parent)
@@ -68,7 +182,7 @@ class CalibrationOffsetWindow(QWidget):
         self.setup_connections()
         
         # Initialisiere Kamera mit Camera-Klasse
-        self.camera = Camera()
+        self.camera = camera.Camera()
         if self.camera.open():
             self.camera_id = self.camera.get_camera_id()
             self.camera_settings = self.camera.get_camera_settings()
@@ -82,24 +196,19 @@ class CalibrationOffsetWindow(QWidget):
             print("[ERROR] Failed to open camera!")
         
         print("[DEBUG] CalibrationOffsetWindow.__init__() complete")
+
+        # Setup marker logic
+        self.setup_marker_logic()
     
     def showEvent(self, event):
         """Override showEvent to ensure buttons are visible"""
         super().showEvent(event)
-        # Force buttons to show after window is visible
-        if hasattr(self.ui, 'bZoomIn') and isinstance(self.ui.bZoomIn, RoundedButton):
-            self.ui.bZoomIn.raise_()
-            self.ui.bZoomOut.raise_()
-            self.ui.bDecline.raise_()
-            self.ui.bAccept.raise_()
-            self.ui.bXT.raise_()
-            self.ui.bXB.raise_()
-            self.ui.bYL.raise_()
-            self.ui.bYR.raise_()
-            # optional: raise newly added sample button if present
-            if hasattr(self.ui, 'bSampel') and isinstance(self.ui.bSampel, RoundedButton):
-                self.ui.bSampel.raise_()
-            print("[DEBUG] Raised all RoundedButtons to front")
+        print(f"[DEBUG] showEvent called. bSampel checked: {getattr(self.ui.bSampel, 'isChecked', lambda: False)()}")
+        if hasattr(self.ui, 'bSampel') and isinstance(self.ui.bSampel, RoundedButton):
+            self.ui.bSampel.raise_()
+        if hasattr(self.ui, 'bExit') and isinstance(self.ui.bExit, RoundedButton):
+            self.ui.bExit.raise_()
+        print("[DEBUG] Raised only bSampel and bExit to front")
     
     def setup_ui(self):
         """Initialisiere UI-Elemente"""
@@ -163,7 +272,7 @@ class CalibrationOffsetWindow(QWidget):
         # Raise all buttons to front (wichtig für Z-Order)
         
         # Hole Screen-Größe aus Kalibrierungs-Einstellungen
-        hardware_settings = get_hardware_settings()
+        hardware_settings = appSettings.get_hardware_settings()
         screen_size = hardware_settings.get("screen_size", {"width": 640, "height": 480})
         screen_width = screen_size["width"]
         screen_height = screen_size["height"]
@@ -186,6 +295,10 @@ class CalibrationOffsetWindow(QWidget):
         # Sample / Foto Button
         # bSampel exists in this UI; connect directly
         self.ui.bSampel.clicked.connect(self.on_sample_clicked)
+
+        # Hide Accept/Decline initially
+        self.ui.bAccept.hide()
+        self.ui.bDecline.hide()
     
     def update_frame(self):
         """Aktualisiere Kamera-Bild"""
@@ -227,8 +340,19 @@ class CalibrationOffsetWindow(QWidget):
         """
         print("[LOG] Sample button clicked")
 
-        # If the sample button is now UNCHECKED -> resume live feed
-        if not self.ui.bSampel.isChecked():
+
+        # Show/hide offset buttons depending on sample button state
+        print(f"[DEBUG] on_sample_clicked called. bSampel checked: {self.ui.bSampel.isChecked()}")
+        if self.ui.bSampel.isChecked():
+            print("[DEBUG] Showing offset buttons")
+            for btn in self.offset_buttons:
+                btn.show()
+            # Set bYL as active (checked) and deactivate others
+            self.set_active_offset_button(self.ui.bYL)
+        else:
+            print("[DEBUG] Hiding offset buttons")
+            for btn in self.offset_buttons:
+                btn.hide()
             print("[LOG] Resume live camera")
             if self.timer and not self.timer.isActive():
                 self.timer.start(33)
@@ -240,18 +364,29 @@ class CalibrationOffsetWindow(QWidget):
         if self.timer and self.timer.isActive():
             self.timer.stop()
 
-        if self.camera is None or not self.camera.is_opened():
-            print("[ERROR] Camera not opened - cannot take samples")
-            return
-
-        frames = []
-        # Capture 4 frames as stills
-        for i in range(4):
-            ret, frame = self.camera.read()
-            if not ret or frame is None:
-                print(f"[WARN] Failed to read frame {i}")
-                continue
-            frames.append(frame.astype(np.float32))
+        import appSettings
+        if appSettings.is_debug_no_cam():
+            test_img_path = '/home/flex/diy/handheld-picam-cnc/pi/test/test1.jpg'
+            if not os.path.exists(test_img_path):
+                print(f"[ERROR] Test image not found: {test_img_path}")
+                return
+            frame = cv2.imread(test_img_path)
+            if frame is None:
+                print(f"[ERROR] Could not load test image: {test_img_path}")
+                return
+            frames = [frame.astype(np.float32)] * 4
+        else:
+            if self.camera is None or not self.camera.is_opened():
+                print("[ERROR] Camera not opened - cannot take samples")
+                return
+            frames = []
+            # Capture 4 frames as stills
+            for i in range(4):
+                ret, frame = self.camera.read()
+                if not ret or frame is None:
+                    print(f"[WARN] Failed to read frame {i}")
+                    continue
+                frames.append(frame.astype(np.float32))
 
         if len(frames) == 0:
             print("[ERROR] No frames captured")
@@ -259,11 +394,16 @@ class CalibrationOffsetWindow(QWidget):
 
         # Average frames to reduce noise
         avg = np.mean(frames, axis=0).astype(np.uint8)
+        # Save original image
+        sample_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'sample'))
+        os.makedirs(sample_dir, exist_ok=True)
+        out_path_orig = os.path.join(sample_dir, 'testimage_original.png')
+        cv2.imwrite(out_path_orig, avg)
+        print(f"[LOG] Saved original sample to: {out_path_orig}")
 
         # Apply camera corrections and perspective rectification using rectificationHelper
-        from appSettings import load_camera_settings
         cam_id = self.camera.get_camera_id()
-        settings = load_camera_settings()
+        settings = appSettings.load_app_settings()
         cam_settings = settings.get(cam_id, {})
         geom = cam_settings.get('calibration', {}).get('geometric', {})
         camera_matrix = None
@@ -275,12 +415,11 @@ class CalibrationOffsetWindow(QWidget):
         tilt_deg = pers.get('tilt_deg')
         yaw_deg = pers.get('yaw_deg')
         if camera_matrix is not None and dist_coeffs is not None:
-            if tilt_deg is not None and yaw_deg is not None:
-                print(f"[LOG] Applying undistort and perspective rectification: tilt={tilt_deg:.2f}°, yaw={yaw_deg:.2f}°")
-                undist = rectify_image(avg, camera_matrix, dist_coeffs, tilt_deg, yaw_deg)
-            else:
-                print("[LOG] Applying undistort only (no perspective)")
-                undist = undistort_image(avg, camera_matrix, dist_coeffs)
+            print("[LOG] Applying undistort only (no perspective)")
+            undist = rectifyHelper.undistort_image(avg, camera_matrix, dist_coeffs)
+            out_path_undist = os.path.join(sample_dir, 'testimage_undistorted.png')
+            cv2.imwrite(out_path_undist, undist)
+            print(f"[LOG] Saved undistorted sample to: {out_path_undist}")
         else:
             print("[LOG] No geometric calibration found - skipping undistort")
             undist = avg
@@ -291,20 +430,24 @@ class CalibrationOffsetWindow(QWidget):
             try:
                 sample_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'sample'))
                 os.makedirs(sample_dir, exist_ok=True)
-                out_path = os.path.join(sample_dir, 'testimage_rectified.png')
-                cv2.imwrite(out_path, undist)
-                print(f"[LOG] Saved rectified sample to: {out_path}")
+                out_path_full = os.path.join(sample_dir, 'testimage_rectified_full.png')
+                cv2.imwrite(out_path_full, undist)
+                print(f"[LOG] Saved full rectified sample to: {out_path_full}")
 
-                # reload to ensure displayed image matches file
-                try:
-                    loaded = cv2.imread(out_path)
-                    if loaded is not None:
-                        undist = loaded
-                        print(f"[LOG] Loaded rectified sample from disk for display: {out_path}")
-                    else:
-                        print(f"[WARN] Saved rectified file could not be reloaded: {out_path}")
-                except Exception as _e2:
-                    print(f"[WARN] Failed to reload rectified sample: {_e2}")
+                # Crop a 640x480 region from the expanded image
+                crop_w, crop_h = 640, 480
+                # Use translation as top-left, clamp to bounds
+                x0 = int(translate_x) if translate_x is not None else 0
+                y0 = int(translate_y) if translate_y is not None else 0
+                x0 = max(0, min(x0, undist.shape[1] - crop_w))
+                y0 = max(0, min(y0, undist.shape[0] - crop_h))
+                cropped = undist[y0:y0+crop_h, x0:x0+crop_w]
+                out_path_crop = os.path.join(sample_dir, 'testimage_rectified_cropped.png')
+                cv2.imwrite(out_path_crop, cropped)
+                print(f"[LOG] Saved cropped rectified sample to: {out_path_crop}")
+
+                # Display the cropped image
+                undist = cropped
             except Exception as _e:
                 print(f"[WARN] Could not save rectified sample: {_e}")
 
@@ -347,8 +490,10 @@ class CalibrationOffsetWindow(QWidget):
             print(f"[LOG] Zoom Out: {self.zoom_level}x")
     
     def on_accept_clicked(self):
-        """Accept Button: Speichere Offset"""
-        print("[LOG] Accept Offset Calibration")
+        """Accept Button: Speichere Marker und beende Workflow"""
+        print("[LOG] Accept Marker")
+        # Marker is already stored in self.markers
+        self.reset_marker_workflow()
 
     
     def set_active_offset_button(self, button):
@@ -385,6 +530,16 @@ class CalibrationOffsetWindow(QWidget):
         # TODO: Implementiere Offset-Anpassung
 
     def on_decline_clicked(self):
-        """Decline Button: Verwerfe Änderungen und schließe Fenster"""
-        print("[LOG] Decline Offset Calibration")
+        """Decline Button: Lösche Marker und beende Workflow"""
+        print("[LOG] Decline Marker")
+        # Remove marker from storage and scene
+        if self.current_marker_btn and self.current_marker:
+            if self.current_marker in self.markers[self.current_marker_btn]:
+                self.markers[self.current_marker_btn].remove(self.current_marker)
+        if hasattr(self, 'current_marker_item') and self.current_marker_item:
+            # Remove all marker items (crosshair and dot)
+            for item in self.current_marker_item:
+                self.scene.removeItem(item)
+            self.current_marker_item = None
+        self.reset_marker_workflow()
 

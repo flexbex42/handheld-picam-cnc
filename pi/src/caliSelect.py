@@ -8,7 +8,7 @@ Calibration Select Window Logik
 import os
 from PyQt5.QtWidgets import QWidget
 from caliSelectWin import Ui_Form as Ui_CalibrationSelectWindow
-from appSettings import load_camera_settings, get_selected_camera
+import appSettings
 import camera
 from caliDistortion import CalibrationDistortionWindow
 
@@ -57,9 +57,9 @@ class CalibrationSelectWindow(QWidget):
     
     def update_camera_status(self):
         """Update Checkboxen mit Kamera-Status und Kalibrierungs-Status"""
-        from camera import get_active_camera
-        saved_settings = load_camera_settings()
-        result = get_active_camera()
+        from camera import get_active_camera_info
+        saved_settings = appSettings.load_app_settings()
+        result = get_active_camera_info()
         mcu_detected = False
         mcu_calibrated = False  # Wird später implementiert
         has_geometric = False

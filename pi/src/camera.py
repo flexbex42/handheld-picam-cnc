@@ -1,5 +1,57 @@
-from appSettings import get_selected_camera, load_camera_settings, get_camera_id, set_selected_camera, save_camera_settings
-def get_active_camera(max_devices=10):
+#!/usr/bin/env python3
+"""
+Camera Handling Module
+- Zentrale Kamera-Verwaltung für alle Calibration-Windows
+- Öffnet Kamera mit korrekten Settings
+- Unterstützt ausgewählte Kamera und Fallback
+"""
+
+# Imports
+import os
+import cv2
+import subprocess
+from PyQt5.QtCore import QThread, pyqtSignal
+from PyQt5.QtGui import QImage
+import appSettings
+
+# Hardware-related: Get unique camera ID (Serial Number or USB Path) for a given index
+def get_camera_id(camera_index):
+    try:
+        video_device = f"/dev/video{camera_index}"
+        result = subprocess.run(
+            ['udevadm', 'info', '--query=property', '--name', video_device],
+            capture_output=True,
+            text=True,
+            timeout=2
+        )
+        if result.returncode == 0:
+            serial = None
+            path = None
+            for line in result.stdout.split('\n'):
+                if line.startswith('ID_SERIAL='):
+                    serial = line.split('=', 1)[1]
+                elif line.startswith('ID_PATH='):
+                    path = line.split('=', 1)[1]
+            camera_id = serial or path or f"video{camera_index}"
+            print(f"[LOG] Camera {camera_index} ID: {camera_id}")
+            return camera_id
+    except Exception as e:
+        print(f"[ERROR] Could not get camera ID: {e}")
+    return f"video{camera_index}"
+
+# Called in caliDistortion.py line 83 and in this file
+def setup_camera():
+    """Centralized camera setup: returns (Camera instance, camera_id, camera_settings)."""
+    cam = Camera()
+    cam_id = None
+    cam_settings = {}
+    if cam.open():
+        cam_id = cam.get_camera_id()
+        cam_settings = cam.get_camera_settings()
+    return cam, cam_id, cam_settings
+
+# Called in caliSelect.py lines 59, 61 and main.py lines 83, 85
+def get_active_camera_info(max_devices=10):
     """
     Returns (camera_id, device_number) for the active camera.
     Logic:
@@ -8,7 +60,7 @@ def get_active_camera(max_devices=10):
     3. Else, if any camera is present, create new profile, save, set as active, and return.
     4. Else, return None.
     """
-    settings = load_camera_settings()
+    settings = appSettings.load_app_settings()
     active_cam = settings.get('active_camera', {})
     active_id = active_cam.get('id')
     # 1. Check if active camera is connected
@@ -22,9 +74,9 @@ def get_active_camera(max_devices=10):
     for i in range(max_devices):
         video_path = f"/dev/video{i}"
         if os.path.exists(video_path):
-            cam_id = get_camera_id(i)
-            if cam_id in settings:
-                set_selected_camera(i, cam_id)
+                cam_id = get_camera_id(i)
+                if cam_id in settings:
+                    appSettings.set_active_camera(i, cam_id)
                 return cam_id, i
     # 3. Check for any present camera
     for i in range(max_devices):
@@ -33,57 +85,28 @@ def get_active_camera(max_devices=10):
             cam_id = get_camera_id(i)
             # Create new profile
             settings[cam_id] = {"calibration": {}, "resolution": "640x480", "format": "MJPEG", "fps": 30}
-            save_camera_settings(settings)
-            set_selected_camera(i, cam_id)
+            appSettings.save_camera_settings(settings)
+            appSettings.set_active_camera(i, cam_id)
             return cam_id, i
     # 4. No camera found
     return None
-#!/usr/bin/env python3
-"""
-Camera Handling Module
-- Zentrale Kamera-Verwaltung für alle Calibration-Windows
-- Öffnet Kamera mit korrekten Settings
-- Unterstützt ausgewählte Kamera und Fallback
-"""
 
-import os
-import cv2
-import subprocess
-from PyQt5.QtCore import QThread, pyqtSignal
-from PyQt5.QtGui import QImage
-from appSettings import get_selected_camera, load_camera_settings, get_camera_id
-def find_camera_device_by_id(camera_id, max_devices=10):
-    """Check if a camera with the given ID is present. Return device number if found, else None."""
-    for i in range(max_devices):
-        video_path = f"/dev/video{i}"
-        if os.path.exists(video_path):
-            found_id = get_camera_id(i)
-            if found_id == camera_id:
-                return i
-    return None
+# Called in caliDevice.py lines 118, 489, caliPerspective.py lines 167, 242, 358, and in this file
 def list_video_devices(max_devices=10):
     """List all available /dev/video* devices (as indices)."""
     devices = []
     for i in range(max_devices):
-        if os.path.exists(f"/dev/video{i}"):
-            devices.append(i)
+        video_path = f"/dev/video{i}"
+        if os.path.exists(video_path):
+            # Optionally check if device can be opened with V4L2
+            cap = cv2.VideoCapture(i, cv2.CAP_V4L2)
+            if cap.isOpened():
+                devices.append(i)
+            cap.release()
     return devices
 
 
-def get_available_cameras(max_devices=10):
-    """Return human-readable camera names, e.g. "Camera 0 (/dev/video0)".
-
-    This wraps `list_video_devices` and centralizes the display-format logic so
-    callers don't duplicate the same string formatting.
-    """
-    devices = list_video_devices(max_devices=max_devices)
-    available = [f"Camera {i} (/dev/video{i})" for i in devices]
-    for i in devices:
-        print(f"[LOG] Found video device: /dev/video{i}")
-    if not available:
-        available.append("No cameras detected")
-    return available
-
+# Called in caliDevice.py lines 145, 216 and in this file
 def get_camera_capabilities(camera_index):
     """Query supported formats, resolutions, and FPS using v4l2-ctl."""
     video_device = f"/dev/video{camera_index}"
@@ -137,20 +160,8 @@ def get_camera_capabilities(camera_index):
         print(f"[ERROR] Could not read camera capabilities: {e}")
         return {}
 
-def get_camera_info(camera_index):
-    """Get current camera settings (resolution, FPS, format) via OpenCV."""
-    cap = cv2.VideoCapture(camera_index, cv2.CAP_V4L2)
-    if not cap.isOpened():
-        return None
-    width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-    height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-    fps = int(cap.get(cv2.CAP_PROP_FPS))
-    fourcc = int(cap.get(cv2.CAP_PROP_FOURCC))
-    fmt = "".join([chr((fourcc >> 8 * i) & 0xFF) for i in range(4)])
-    cap.release()
-    return {"width": width, "height": height, "fps": fps, "format": fmt}
-
-
+# Called in caliDevice.py line 481 and in this file
+# non-blocking, real-time display, you need a threaded or asynchronous approach
 class VideoThread(QThread):
     """Thread for camera capture (non-blocking) provided as a reusable helper.
 
@@ -211,10 +222,26 @@ class VideoThread(QThread):
         self._run_flag = False
         self.wait()
 
-# Re-export get_camera_id for convenience
-get_camera_id = get_camera_id
+
+"""
+Camera Handling Module
+- Zentrale Kamera-Verwaltung für alle Calibration-Windows
+- Öffnet Kamera mit korrekten Settings
+- Unterstützt ausgewählte Kamera und Fallback
+"""
+
+# Imports
+import os
+import cv2
+import subprocess
+from PyQt5.QtCore import QThread, pyqtSignal
+from PyQt5.QtGui import QImage
+import appSettings 
 
 
+# Camera class and init
+# Called in caliDistortion.py line 118, caliOffset.py line 70, caliPerspective.py lines 138, 259, and in this file
+# those tasks only need to grab frames occasionally or process images without live display, the synchronous Camera class is fine.
 class Camera:
     """
     Kamera-Wrapper für einheitliches Kamera-Handling
@@ -232,6 +259,7 @@ class Camera:
         self.camera_settings = {}
         self.camera_index = None
         
+    # Called in: caliOffset.py, caliDistortion.py, caliPerspective.py, camera.py
     def open(self):
         """
         Öffne Kamera mit gespeicherten Settings
@@ -240,10 +268,10 @@ class Camera:
             bool: True wenn Kamera erfolgreich geöffnet, False sonst
         """
         # use appSettings functions
-        saved_settings = load_camera_settings()
+        saved_settings = appSettings.load_app_settings()
         
         # Prüfe ob eine Kamera ausgewählt wurde
-        selected_index, selected_id = get_selected_camera()
+        selected_index, selected_id = appSettings.get_active_camera()
         
         if selected_index is not None and selected_id is not None:
             # Nutze ausgewählte Kamera
@@ -281,6 +309,7 @@ class Camera:
         print("[Camera] ERROR: No camera found or could not open camera!")
         return False
     
+    # Called internally by Camera.open()
     def _apply_settings(self):
         """Wende gespeicherte Kamera-Parameter an"""
         if not self.cap or not self.cap.isOpened():
@@ -304,6 +333,7 @@ class Camera:
         print(f"[Camera] Initialized: {self.camera_id}")
         print(f"[Camera] Resolution: {width}x{height} @ {fps}fps, Format: {fourcc_str}")
     
+    # Called in: caliOffset.py, caliDistortion.py, caliPerspective.py, camera.py
     def read(self):
         """
         Lese ein Frame von der Kamera
@@ -316,6 +346,7 @@ class Camera:
         
         return self.cap.read()
     
+    # Called in: caliOffset.py, caliDistortion.py, camera.py
     def is_opened(self):
         """
         Prüfe ob Kamera geöffnet ist
@@ -325,6 +356,7 @@ class Camera:
         """
         return self.cap is not None and self.cap.isOpened()
     
+    # Called in: caliOffset.py, caliDistortion.py, caliPerspective.py, camera.py
     def release(self):
         """Schließe Kamera"""
         if self.cap:
@@ -332,6 +364,7 @@ class Camera:
             self.cap = None
             print(f"[Camera] Released")
     
+    # Only called in camera.py
     def get_resolution(self):
         """
         Hole aktuelle Auflösung
@@ -343,6 +376,7 @@ class Camera:
         width, height = map(int, res.split('x'))
         return width, height
     
+    # Called in: caliOffset.py, caliDistortion.py, caliPerspective.py, camera.py
     def get_camera_id(self):
         """
         Hole Kamera-ID
@@ -352,6 +386,7 @@ class Camera:
         """
         return self.camera_id
     
+    # Called in: caliOffset.py, caliDistortion.py, caliPerspective.py, camera.py
     def get_camera_settings(self):
         """
         Hole alle Kamera-Settings
@@ -361,16 +396,19 @@ class Camera:
         """
         return self.camera_settings
     
+    # Used for context management (with statement), not directly called elsewhere
     def __enter__(self):
         """Context Manager: Öffne Kamera"""
         self.open()
         return self
 
+    # Used for context management (with statement), not directly called elsewhere
     def __exit__(self, exc_type, exc_val, exc_tb):
         """Context Manager: Schließe Kamera"""
         self.release()
         return False
 
+    # Only called in camera.py
     def get_info(self):
         """Return current camera info (resolution, FPS, format) if opened."""
         if not self.cap or not self.cap.isOpened():

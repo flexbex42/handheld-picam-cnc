@@ -54,11 +54,11 @@ class SettingsWindow(QMainWindow):
         screen_height = screen_size.get("height", 480)
 
         # Set TreeView width to 200, gvCamera width to (screen_width - 200)
-        treeview_width = 200
+        treeview_width = 250
         camera_width = max(100, screen_width - treeview_width)
         camera_height = screen_height
-        self.ui.treeWidget.setMaximumWidth(treeview_width)
-        self.ui.treeWidget.setMinimumWidth(treeview_width)
+        self.ui.tvSettings.setMaximumWidth(treeview_width)
+        self.ui.tvSettings.setMinimumWidth(treeview_width)
         self.ui.gvCamera.setMaximumWidth(camera_width)
         self.ui.gvCamera.setMinimumWidth(camera_width)
         self.ui.gvCamera.setMaximumHeight(camera_height)
@@ -89,10 +89,10 @@ class SettingsWindow(QMainWindow):
         self.current_format = "MJPEG"
         
         # Speichere die vorher ausgewählte Kamera (zum Wiederherstellen bei Cancel)
-        self.previous_selected_index, self.previous_selected_id = appSettings.get_selected_camera()
+        self.previous_selected_index, self.previous_selected_id = appSettings.get_active_camera()
         
         # Lade gespeicherte Settings
-        self.saved_settings = appSettings.load_camera_settings()
+        self.saved_settings = appSettings.load_app_settings()
         
         # TreeWidget Items (Referenzen speichern)
         self.device_item = None
@@ -143,7 +143,7 @@ class SettingsWindow(QMainWindow):
         # NICHT global setzen beim Auto-Load - nur temporär!
         
         # Lese Capabilities
-        capabilities = self.get_camera_capabilities(camera_index)
+        capabilities = camera.get_camera_capabilities(camera_index)
         self.camera_capabilities = capabilities
         
         # Aktiviere und fülle TreeView
@@ -214,7 +214,7 @@ class SettingsWindow(QMainWindow):
                     print("[LOG] Collapsed all tree items (Resolution, FPS, Format)")
                     
                     # Lese Kamera-Capabilities mit v4l2-ctl
-                    capabilities = self.get_camera_capabilities(camera_index)
+                    capabilities = camera.get_camera_capabilities(camera_index)
                     self.camera_capabilities = capabilities
                     
                     # Aktiviere und fülle andere Tree Items mit tatsächlichen Werten
@@ -370,7 +370,14 @@ class SettingsWindow(QMainWindow):
         """Setze feste Höhe für TreeWidget Item"""
         from PyQt5.QtCore import QSize
         item.setSizeHint(0, QSize(0, 44))
-        
+
+    def get_human_readable_cameras(self):
+        devices = camera.list_video_devices()
+        available = [f"Camera {i} (/dev/video{i})" for i in devices]
+        if not available:
+            available.append("No cameras detected")
+        return available
+
     def setup_tree_view(self):
         """Erstelle TreeView Struktur"""
         # Clear existing items
@@ -390,7 +397,7 @@ class SettingsWindow(QMainWindow):
         self.set_item_height(self.device_item)
         
         # Lade verfügbare Kameras
-        cameras = self.get_available_cameras()
+        cameras = self.get_human_readable_cameras()
         for camera_name in cameras:
             camera_child = QTreeWidgetItem(self.device_item, [camera_name])
             camera_child.setData(0, Qt.UserRole, "device")  # Tag für Identifikation
@@ -431,40 +438,13 @@ class SettingsWindow(QMainWindow):
         
         print("[LOG] TreeView setup complete")
         
-    def get_available_cameras(self):
-        """Findet alle verfügbaren Kameras (über camera.py)"""
-        # Delegate to camera.get_available_cameras to avoid duplicated formatting logic
-        try:
-            return camera.get_available_cameras()
-        except Exception:
-            # Fallback: simple device scan
-            devices = camera.list_video_devices()
-            available_cameras = [f"Camera {i} (/dev/video{i})" for i in devices]
-            if not available_cameras:
-                available_cameras.append("No cameras detected")
-            return available_cameras
     
-    def get_camera_capabilities(self, camera_index):
-        """Lese unterstützte Formate, Auflösungen und FPS (über camera.py)"""
-        formats = camera.get_camera_capabilities(camera_index)
-        print(f"[LOG] Camera {camera_index} capabilities: {formats}")
-        if not formats:
-            return self.get_default_capabilities()
-        return formats
     
     def get_default_capabilities(self):
-        """Fallback: Standard-Capabilities wenn v4l2-ctl nicht verfügbar"""
-        return {
-            'MJPG': {
-                '640x480': [15, 30],
-                '1280x720': [15, 30],
-                '1920x1080': [15, 30]
-            },
-            'YUYV': {
-                '640x480': [15, 30],
-                '1280x720': [15, 30]
-            }
-        }
+        """Throw error and prompt user to install v4l2-ctl if not available."""
+        raise RuntimeError(
+            "Camera capabilities could not be determined. Please install 'v4l2-ctl' (sudo apt install v4l-utils) and ensure your camera is connected."
+        )
         
     # load_cameras() removed: ComboBox-based UI is deprecated in favor of TreeView.
         
@@ -529,7 +509,7 @@ class SettingsWindow(QMainWindow):
         print("[LOG] Cancel button pressed - discarding changes")
         # Stelle vorherige Auswahl wieder her
         if self.previous_selected_index is not None and self.previous_selected_id is not None:
-            appSettings.set_selected_camera(self.previous_selected_index, self.previous_selected_id)
+            appSettings.set_active_camera(self.previous_selected_index, self.previous_selected_id)
             print(f"[LOG] Restored previous camera selection: index={self.previous_selected_index}, id={self.previous_selected_id}")
         # Stoppe Kamera vor dem Verlassen
         self.stop_camera()
@@ -541,7 +521,7 @@ class SettingsWindow(QMainWindow):
         print("[LOG] OK button pressed - applying changes")
         # Übernimm die aktuelle Auswahl global
         if self.current_camera_index is not None and self.current_camera_id is not None:
-            appSettings.set_selected_camera(self.current_camera_index, self.current_camera_id)
+            appSettings.set_active_camera(self.current_camera_index, self.current_camera_id)
             print(f"[LOG] Applied camera selection globally: index={self.current_camera_index}, id={self.current_camera_id}")
             # Speichere Kamera-Settings (inkl. ausgewählte Kamera)
             self.save_current_camera_settings()

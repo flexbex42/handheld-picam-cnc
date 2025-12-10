@@ -65,8 +65,10 @@ echo "Starte App im DEBUG-MODUS (640x480)"
 echo "====================================="
 echo ""
 
-# Setze Debug-Flag und starte App
-export DEBUG_MODE=1
+
+# Setze Debug-Flag und NO_CAM_MODE für Testbetrieb
+export APP_DEBUG_MODE=1
+export NO_CAM_MODE=0
 cd src
 python3 main.py
 

@@ -57,9 +57,9 @@ class CalibrationSelectWindow(QWidget):
     
     def update_camera_status(self):
         """Update Checkboxen mit Kamera-Status und Kalibrierungs-Status"""
-        
-        saved_settings = appSettings.load_app_settings()
         result = camera.update_active_camera_info()
+        saved_settings = appSettings.get_app_settings()
+        
         mcu_detected = False
         mcu_calibrated = False  # Wird später implementiert
         has_geometric = False

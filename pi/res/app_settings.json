@@ -35,8 +35,8 @@
                 "reprojection_error": 0.07775309028955273
             },
             "perspective": {
-                "tilt_deg": -5.900446365633646,
-                "yaw_deg": 179.4858189450255,
+                "roll": -5.900446365633646,
+                "pitch": 179.4858189450255,
                 "scale_mm_per_pixel": 0.098742247718047,
                 "successful_images": 15,
                 "translate_x": 0,
@@ -96,11 +96,11 @@
                 "reprojection_error": 0.07775309028955273
             },
             "perspective": {
-                "tilt_deg": -5.294369391243056,
-                "yaw_deg": 0.7,
-                "scale_mm_per_pixel": 0.09979311536226358,
-                "successful_images": 15,
-                "translate_x": 50,
+                "roll": -3.867898755445812,
+                "pitch": 181.6822214560685,
+                "scale_mm_per_pixel": 0.09927528707177061,
+                "successful_images": 5,
+                "translate_x": 0,
                 "translate_y": 0
             }
         }

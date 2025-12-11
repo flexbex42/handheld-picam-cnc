@@ -5,8 +5,8 @@
         "fps": 30,
         "calibration": {
             "perspective": {
-                "tilt_deg": 9.234181447292801,
-                "yaw_deg": -179.37400880539224,
+                "pitch_deg": 9.234181447292801,
+                "roll_deg": -179.37400880539224,
                 "scale_mm_per_pixel": 0.10023028066038565,
                 "successful_images": 15
             }
@@ -65,8 +65,8 @@
                 "num_images": 15
             },
             "perspective": {
-                "tilt_deg": -8.910214249606698,
-                "yaw_deg": 2.1864888488170777,
+                "pitch_deg": -8.910214249606698,
+                "roll_deg": 2.1864888488170777,
                 "scale_mm_per_pixel": 0.10121616623074957,
                 "successful_images": 15,
                 "translate_x": 20,

@@ -21,9 +21,9 @@ if not pers:
     print('No perspective block for selected camera')
     raise SystemExit(1)
 
-tilt_deg = pers.get('tilt_deg')
-yaw_deg = pers.get('yaw_deg')
-print('Using tilt_deg, yaw_deg from file:', tilt_deg, yaw_deg)
+pitch_deg = pers.get('pitch_deg')
+roll_deg = pers.get('roll_deg')
+print('Using pitch_deg, roll_deg from file:', pitch_deg, roll_deg)
 
 res_str = cam.get('resolution')
 if res_str and 'x' in res_str:
@@ -41,10 +41,10 @@ translate_x=0
 translate_y=0
 pad=20
 
-if cam_mat is not None and tilt_deg is not None and yaw_deg is not None:
-    def build_rotation(tilt_d, yaw_d):
-        tr = np.deg2rad(tilt_d)
-        yr = np.deg2rad(yaw_d)
+if cam_mat is not None and pitch_deg is not None and roll_deg is not None:
+    def build_rotation(pitch_d, roll_d):
+        tr = np.deg2rad(pitch_d)
+        yr = np.deg2rad(roll_d)
         ct = np.cos(tr); st = np.sin(tr)
         cy = np.cos(yr); sy = np.sin(yr)
         col0 = np.array([ct*cy, ct*sy, -st], dtype=np.float64)
@@ -62,7 +62,7 @@ if cam_mat is not None and tilt_deg is not None and yaw_deg is not None:
         z_b = np.arctan2(R_b[1,0], R_b[0,0])
         return R_a if abs(z_a)<=abs(z_b) else R_b
 
-    R_recon = build_rotation(tilt_deg, yaw_deg)
+    R_recon = build_rotation(pitch_deg, roll_deg)
     fx = cam_mat[0,0]; fy = cam_mat[1,1]; cx = cam_mat[0,2]; cy = cam_mat[1,2]
     src_corners = np.array([[0.0,0.0],[w-1.0,0.0],[w-1.0,h-1.0],[0.0,h-1.0]], dtype=np.float64)
     dst=[]

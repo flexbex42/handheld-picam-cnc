@@ -20,11 +20,11 @@ pers = cam.get('calibration', {}).get('perspective', {})
 geom = cam.get('calibration', {}).get('geometric', {})
 
 # Read stored values (already in the convention used by caliOffset)
-stored_tilt = pers.get('tilt_deg')
-stored_yaw = pers.get('yaw_deg')
+stored_pitch = pers.get('pitch_deg')
+stored_roll = pers.get('roll_deg')
 print(f"\nStored in settings file:")
-print(f"  tilt_deg: {stored_tilt}")
-print(f"  yaw_deg: {stored_yaw}")
+print(f"  pitch_deg: {stored_pitch}")
+print(f"  roll_deg: {stored_roll}")
 print(f"  translate_x: {pers.get('translate_x')}")
 print(f"  translate_y: {pers.get('translate_y')}")
 
@@ -50,10 +50,10 @@ else:
 
 print(f"  Image size: {w_img}x{h_img}")
 
-# Build rotation matrix from stored tilt/yaw (same as caliPerspective)
-def build_rotation(tilt_d, yaw_d):
-    tr = np.deg2rad(tilt_d)
-    yr = np.deg2rad(yaw_d)
+# Build rotation matrix from stored pitch/roll (same as caliPerspective)
+def build_rotation(pitch_d, roll_d):
+    tr = np.deg2rad(pitch_d)
+    yr = np.deg2rad(roll_d)
     ct = np.cos(tr)
     st = np.sin(tr)
     cy = np.cos(yr)
@@ -76,7 +76,7 @@ def build_rotation(tilt_d, yaw_d):
     chosen = R_a if abs(z_a) <= abs(z_b) else R_b
     return chosen
 
-R_recon = build_rotation(stored_tilt, stored_yaw)
+R_recon = build_rotation(stored_pitch, stored_roll)
 
 fx = cam_mat[0, 0]
 fy = cam_mat[1, 1]

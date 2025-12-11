@@ -54,7 +54,7 @@ class MainApp(QMainWindow):
     
     def load_selected_camera_on_startup(self):
         """Lade die zuletzt ausgewählte Kamera beim Programmstart"""
-        saved_settings = appSettings.load_app_settings()
+        saved_settings = appSettings.get_app_settings()
 
         # Assume new 'active_camera' object exists in settings. If its id is empty,
         # treat this as no camera selected.
@@ -82,7 +82,7 @@ class MainApp(QMainWindow):
     def update_camera_status(self):
         """Update Checkboxes mit Kamera-Status und MCU-Status"""
         from camera import update_active_camera_info
-        saved_settings = appSettings.load_app_settings()
+        saved_settings = appSettings.get_app_settings()
         result = update_active_camera_info()
         if result is None:
             # No camera found

@@ -369,7 +369,7 @@ class CalibrationDistortionWindow(QWidget):
         print("[LOG] Saving calibration data...")
         
         # Lade aktuelle Settings
-        saved_settings = appSettings.load_app_settings()
+        saved_settings = appSettings.get_app_settings()
         
         # Stelle sicher dass Calibration-Dict existiert
         if "calibration" not in saved_settings[self.camera_id]:

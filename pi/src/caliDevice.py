@@ -92,7 +92,7 @@ class SettingsWindow(QMainWindow):
         self.previous_selected_index, self.previous_selected_id = appSettings.get_active_camera()
         
         # Lade gespeicherte Settings
-        self.saved_settings = appSettings.load_app_settings()
+        self.saved_settings = appSettings.get_app_settings()
         
         # TreeWidget Items (Referenzen speichern)
         self.device_item = None

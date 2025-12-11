@@ -400,7 +400,6 @@ class CalibrationOffsetWindow(QWidget):
         if self.timer and self.timer.isActive():
             self.timer.stop()
 
-        import appSettings
         if appSettings.is_debug_no_cam():
             test_img_path = '/home/flex/diy/handheld-picam-cnc/pi/test/test1.jpg'
             if not os.path.exists(test_img_path):
@@ -439,7 +438,7 @@ class CalibrationOffsetWindow(QWidget):
 
         # Apply camera corrections (undistortion only)
         cam_id = self.camera.get_camera_id()
-        settings = appSettings.load_app_settings()
+        settings = appSettings.get_app_settings()
         cam_settings = appSettings.get_active_camera_settings()
         geom = cam_settings.get('calibration', {}).get('geometric', {})
         camera_matrix = None

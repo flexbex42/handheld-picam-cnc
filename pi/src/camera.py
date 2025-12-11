@@ -60,7 +60,7 @@ def update_active_camera_info(max_devices=10):
     3. Else, if any camera is present, create new profile, save, set as active, and return.
     4. Else, return None.
     """
-    settings = appSettings.load_app_settings()
+    settings = appSettings.get_app_settings()
     active_cam = settings.get('active_camera', {})
     active_id = active_cam.get('id')
     # 1. Check if active camera is connected
@@ -268,7 +268,7 @@ class Camera:
             bool: True wenn Kamera erfolgreich geöffnet, False sonst
         """
         # use appSettings functions
-        saved_settings = appSettings.load_app_settings()
+        saved_settings = appSettings.get_app_settings()
         
         # Prüfe ob eine Kamera ausgewählt wurde
         selected_index, selected_id = appSettings.get_active_camera()

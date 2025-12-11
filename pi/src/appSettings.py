@@ -56,24 +56,12 @@ def get_checkerboard_config():
 # Used in caliDistortion.py, caliPerspective.py, camera.py (load calibration settings)
 def get_calibration_settings():
     """Get calibration settings from config."""
-    settings = load_app_settings()
-    if "calibration_settings" in settings:
-        return settings["calibration_settings"]
-    return get_default_calibration_settings()
-
-# Used in appSettings.py (default fallback for calibration settings)
-def get_default_calibration_settings():
-    """Return default calibration settings."""
-    return {
-        "checkerboard_boxes": {"x": 11, "y": 8},
-        "checkerboard_dim": {"size_mm": 5},
-        "num_offset_marker": 4
-    }
+    return get_app_settings()["calibration_settings"]
 
 
 
 # Used in caliDevice.py, camera.py, main.py, caliSelect.py (load all app settings)
-def load_app_settings():
+def get_app_settings():
     """Load saved camera settings from JSON file."""
     if not os.path.exists(SETTINGS_FILE):
         print("[LOG] No settings file found, creating with defaults")
@@ -92,10 +80,6 @@ def load_app_settings():
         with open(SETTINGS_FILE, 'r') as f:
             settings = json.load(f)
             print(f"[LOG] Loaded settings for {len(settings)} camera(s)")
-            if "calibration_settings" not in settings:
-                settings["calibration_settings"] = get_default_calibration_settings()
-                save_camera_settings(settings)
-                print("[LOG] Added default calibration_settings to config")
             return settings
     except Exception as e:
         print(f"[ERROR] Could not load settings: {e}")
@@ -106,7 +90,7 @@ def load_app_settings():
 # Used in caliDevice.py, camera.py, main.py (read hardware settings)
 def get_hardware_settings():
     """Return hardware_setting from app settings (read-only)."""
-    settings = load_app_settings()
+    settings = get_app_settings()
     return settings.get("hardware_setting", {})
 
 
@@ -118,7 +102,7 @@ def set_active_camera(camera_index, camera_id):
     _ACTIVE_CAMERA_ID = camera_id
     print(f"[LOG] Selected camera set to index={camera_index}, id={camera_id}")
     try:
-        settings = load_app_settings()
+        settings = get_app_settings()
         settings['active_camera'] = {'id': camera_id, 'device': camera_index}
         save_camera_settings(settings)
         print(f"[LOG] Persisted active_camera to settings: id={camera_id}, device={camera_index}")
@@ -188,7 +172,7 @@ def save_current_camera_settings(saved_settings, camera_id, camera_index, curren
     try:
         saved_settings['active_camera'] = {'id': camera_id, 'device': camera_index}
     except Exception:
-        saved_settings = load_app_settings()
+        saved_settings = get_app_settings()
         saved_settings['active_camera'] = {'id': camera_id, 'device': camera_index}
 
     if save_camera_settings(saved_settings):
@@ -202,11 +186,11 @@ def save_current_camera_settings(saved_settings, camera_id, camera_index, curren
 # Used in caliPerspective.py, camera.py, caliDevice.py (get settings for a specific camera)
 def get_camera_settings(camera_id):
     """Return the settings dict for the given camera_id from the app settings file, or an empty dict if not found."""
-    settings = load_app_settings()
+    settings = get_app_settings()
     return settings.get(camera_id, {})
 
 def get_active_camera_settings():
-    settings = load_app_settings()
+    settings = get_app_settings()
     return settings.get(_ACTIVE_CAMERA_ID, {})
 
 # Used in caliPerspective.py, camera.py, caliDevice.py (get calibration for a specific camera)
@@ -214,6 +198,6 @@ def get_camera_calibration(camera_id):
     """Return the calibration dict for the given camera_id from the app settings file, or an empty dict if not found."""
     if camera_id is None:
         camera_id=get_active_camera()
-    settings = load_app_settings()
+    settings = get_app_settings()
     camera_settings = settings.get(camera_id, {})
     return camera_settings.get('calibration', {})

@@ -140,9 +140,9 @@ def undistort_image(img, camera_matrix, dist_coeffs):
         return img
     return cv2.undistort(img, camera_matrix, dist_coeffs)
 
- # Used in caliPerspective.py (tilt/yaw/scale from checkerboard)
-def compute_perspective_from_samples(sample_dir, max_samples, checkerboard_sizes, detected_checkerboard_size, square_size, camera_matrix, dist_coeffs):
-    """Compute tilt, yaw, and scale from checkerboard images. Returns (success, tilt_deg, yaw_deg, scale_mm_per_pixel, successful_count)."""
+ # Used in caliPerspective.py (pitch/roll/scale from checkerboard)
+def compute_perspective_from_samples(samples, max_samples, checkerboard_sizes, detected_checkerboard_size, square_size, camera_matrix, dist_coeffs):
+    """Compute pitch, roll, and scale from checkerboard images. Accepts a list/tuple of images (in-memory). Returns (success, pitch_deg, roll_deg, scale_mm_per_pixel, successful_count)."""
     objpoints = []
     imgpoints = []
     successful_images = 0
@@ -153,12 +153,9 @@ def compute_perspective_from_samples(sample_dir, max_samples, checkerboard_sizes
     objp = np.zeros((pattern_size[0] * pattern_size[1], 3), np.float32)
     objp[:, :2] = np.mgrid[0:pattern_size[0], 0:pattern_size[1]].T.reshape(-1, 2)
     objp *= square_size
-    for i in range(1, max_samples + 1):
-        filename = f"sample_{i:02d}.jpg"
-        filepath = os.path.join(sample_dir, filename)
-        if not os.path.exists(filepath):
-            continue
-        img = cv2.imread(filepath)
+
+    images = samples[:max_samples]
+    for img in images:
         if img is None:
             continue
         img_undistorted = undistort_image(img, camera_matrix, dist_coeffs)
@@ -188,10 +185,10 @@ def compute_perspective_from_samples(sample_dir, max_samples, checkerboard_sizes
     rvec_mean = np.mean(rvecs_list, axis=0)
     tvec_mean = np.mean(tvecs_list, axis=0)
     rmat, _ = cv2.Rodrigues(rvec_mean)
-    tilt_rad = np.arcsin(-rmat[2, 0])
-    yaw_rad = np.arctan2(rmat[1, 0], rmat[0, 0])
-    tilt_deg = np.degrees(tilt_rad)
-    yaw_deg = np.degrees(yaw_rad)
+    pitch_rad = np.arcsin(-rmat[2, 0])
+    roll_rad = np.arctan2(rmat[1, 0], rmat[0, 0])
+    pitch_deg = np.degrees(pitch_rad)
+    roll_deg = np.degrees(roll_rad)
     img_pts = imgpoints[0]
     distances_px = []
     for idx in range(len(img_pts) - 1):
@@ -200,7 +197,7 @@ def compute_perspective_from_samples(sample_dir, max_samples, checkerboard_sizes
             distances_px.append(dist)
     avg_dist_px = np.mean(distances_px)
     scale_mm_per_pixel = square_size / avg_dist_px
-    return True, tilt_deg, yaw_deg, scale_mm_per_pixel, successful_images
+    return True, pitch_deg, roll_deg, scale_mm_per_pixel, successful_images
 
 
 

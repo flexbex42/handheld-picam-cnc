@@ -7,7 +7,7 @@ at (0,0) by default) and calls `compute_world_axes_from_markers` and
 this file to test different inputs.
 """
 
-from markerHelper import (
+from markerHelperTest import (
     compute_world_axes_from_markers,
     euclid_transform_coord,
 )
@@ -124,6 +124,26 @@ def main():
                 ax.scatter(xs, ys, c='green', marker='x', label='yl')
             elif k == 'yr':
                 ax.scatter(xs, ys, c='magenta', marker='x', label='yr')
+
+        # Visualize marker means, midpoint, and origin
+        import numpy as np
+        yl = np.array(markers['yl'], dtype=np.float64)
+        yr = np.array(markers['yr'], dtype=np.float64)
+        mean_yl = np.mean(yl, axis=0)
+        mean_yr = np.mean(yr, axis=0)
+        mid = (mean_yl + mean_yr) / 2.0
+        # Project midpoint onto X axis (origin)
+        m_xt, b_xt = np.linalg.lstsq(np.vstack([np.array(markers['xt'])[:,0], np.ones(4)]).T, np.array(markers['xt'])[:,1], rcond=None)[0]
+        m_xb, b_xb = np.linalg.lstsq(np.vstack([np.array(markers['xb'])[:,0], np.ones(4)]).T, np.array(markers['xb'])[:,1], rcond=None)[0]
+        m_xw = (m_xt + m_xb) / 2.0
+        b_xw = (b_xt + b_xb) / 2.0
+        origin_x = mid[0]
+        origin_y = m_xw * origin_x + b_xw
+        # Draw means
+        ax.scatter([mean_yl[0]+cx], [mean_yl[1]+cy], c='green', marker='s', s=80, label='mean yl')
+        ax.scatter([mean_yr[0]+cx], [mean_yr[1]+cy], c='magenta', marker='s', s=80, label='mean yr')
+        ax.scatter([mid[0]+cx], [mid[1]+cy], c='orange', marker='*', s=120, label='midpoint yl/yr')
+        ax.scatter([origin_x+cx], [origin_y+cy], c='black', marker='*', s=120, label='origin (proj)')
 
         # plot only euclid_transform_coord axes (black/gray)
         exs = [coords_euclid['x_start'], coords_euclid['x_end']]

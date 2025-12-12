@@ -44,7 +44,7 @@ class CalibrationOffsetWindow(QWidget):
         self.timer.start(33)  # ~30 FPS
         self.setup_ui()
         self.setup_connections()
-        # Load num_offset_marker from appSettings
+          # Load num_offset_marker from appSettings
         self.num_offset_marker = appSettings.get_calibration_settings().get('num_offset_marker', 4)
         # Extrinsic results (azimuth, tx, ty) available to whole class
         self.az = None
@@ -405,14 +405,29 @@ class CalibrationOffsetWindow(QWidget):
                     print(f"  {group}: {points}")
 
                 # compute Az, tx, ty and store to instance for later use
-                self.az, self.tx, self.ty = markerHelper.compute_world_axes_from_markers(markers)
+                az, tx, ty = markerHelper.compute_world_axes_from_markers(markers)
+                # Scale tx, ty by 'scale' from intrinsic settings
+                scale = 1.0
+                try:
+                    cam_settings = appSettings.get_active_camera_settings()
+                    scale_val = cam_settings.get('intrinsic', {}).get('perspective', {}).get('scale_mm_per_pixel', 1.0)
+                    if scale_val is None:
+                        scale = 1.0
+                    else:
+                        scale = float(scale_val)
+                except Exception as e:
+                    print(f"[WARN] Could not get scale from intrinsic: {e}")
+
 
                 # compute axis coordinates (use image size from widget)
+                # First assign computed values (scaled) so we don't pass None into euclid_transform_coord
+                self.az = az
+                self.tx = tx * scale if tx is not None else None
+                self.ty = ty * scale if ty is not None else None
                 w = getattr(self.marker_widget, 'img_width', None)
                 h = getattr(self.marker_widget, 'img_height', None)
                 # Use marker-driven axis computation: Y axis is based on mean x of yl/yr
-                coords = markerHelper.euclid_transform_coord(self.tx, self.ty, self.az, w, h)
-
+                coords = markerHelper.euclid_transform_coord(tx, ty, az, w, h)
                 # draw X axis (red) and Y axis (green) on the image
                 x_start = coords['x_start']
                 x_end = coords['x_end']
@@ -473,6 +488,13 @@ class CalibrationOffsetWindow(QWidget):
                         self.close()
                     except Exception:
                         pass
+                    # call on_exit_callback if set (restores main UI)
+                    try:
+                        if hasattr(self, 'on_exit_callback') and self.on_exit_callback:
+                            print("[DEBUG] caliOffset: Calling on_exit_callback from dialog OK")
+                            self.on_exit_callback()
+                    except Exception as e:
+                        print(f"[ERROR] on_exit_callback failed: {e}")
                 ui.bAccept.clicked.connect(_on_ok)
 
                 dialog.exec_()

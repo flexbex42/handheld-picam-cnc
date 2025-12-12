@@ -1,3 +1,9 @@
+"""
+Copy of markerHelper.py for isolated testing.
+"""
+
+# Copy from markerHelper.py below:
+
 """markerHelper
 
 Light-weight helpers for computing image-space X/Y axes from a Euclidean
@@ -14,17 +20,11 @@ were removed in favor of `euclid_transform_coord`.
 from typing import Optional, Tuple, Dict
 import math
 import numpy as np
-import appSettings
 
-# Public API exported by `from markerHelper import *`
 __all__ = ["euclid_transform_coord", "compute_world_axes_from_markers"]
 
 
 def _intersect_line_rect(x0: float, y0: float, dx: float, dy: float, w: float, h: float):
-    """Return up to two intersection points (x,y) of the parametric line
-    (x0+t*dx, y0+t*dy) with the rectangle [0..w] x [0..h]. If no intersections
-    are found a long projected segment is returned as two points.
-    """
     eps = 1e-12
     pts = []
     if abs(dx) > eps:
@@ -48,7 +48,6 @@ def _intersect_line_rect(x0: float, y0: float, dx: float, dy: float, w: float, h
     if not pts:
         diag = math.hypot(w, h) * 1.5
         return [(x0 - dx * diag, y0 - dy * diag), (x0 + dx * diag, y0 + dy * diag)]
-    # deduplicate and sort by t
     seen = set()
     uniq = []
     for t, x, y in pts:
@@ -71,12 +70,6 @@ def _clamp_point(x: float, y: float, width: int, height: int) -> Tuple[int, int]
 
 
 def euclid_transform_coord(xd: float, yd: float, Az: float, width: int, height: int) -> Dict[str, Tuple[int, int]]:
-    """Compute axis endpoints at image borders for a Euclidean transform.
-
-    xd, yd are origin offsets in pixels relative to image center (centered
-    coordinates). Az is degrees (0 => X to the right, positive CCW).
-    """
-    # image center
     cx = float(width) / 2.0
     cy = float(height) / 2.0
     ox = cx + float(xd)
@@ -91,7 +84,6 @@ def euclid_transform_coord(xd: float, yd: float, Az: float, width: int, height: 
     x_pts = _intersect_line_rect(ox, oy, vx, vy, float(width), float(height))
     y_pts = _intersect_line_rect(ox, oy, px, py, float(width), float(height))
 
-    # guarantee two points
     if len(x_pts) < 2:
         diag = math.hypot(width, height) * 1.5
         x_pts = [(ox - vx * diag, oy - vy * diag), (ox + vx * diag, oy + vy * diag)]
@@ -111,16 +103,10 @@ def compute_world_axes_from_markers(markers: Dict[str, list]) -> Tuple[float, fl
     """
     Compute optimal origin and azimuth that minimize squared distance from all markers to their axes.
     
-    Given marker groups 'xt','xb','yl','yr' (centered coords) compute Az, xd, yd using
-    least-squares optimization.
-    
     Optimization variables: origin_x, origin_y, azimuth
     Cost function: sum of squared distances from:
       - xt, xb markers to X-axis (defined by origin and azimuth)
       - yl, yr markers to Y-axis (perpendicular to X-axis through origin)
-    
-    Returns (Az_deg, xd, yd) where xd, yd are in the same centered coordinate
-    system (pixels).
     """
     try:
         xt = np.array(markers['xt'], dtype=np.float64)
@@ -204,5 +190,10 @@ def compute_world_axes_from_markers(markers: Dict[str, list]) -> Tuple[float, fl
     ox_opt, oy_opt, az_rad_opt = result.x
     az_deg_opt = math.degrees(az_rad_opt)
     
+    initial_cost = cost_function(initial_guess)
+    print("[DEBUG markerHelperTest] Optimization results:")
+    print(f"  Initial: origin=({mid[0]:.3f}, {mid[1]:.3f}), Az={math.degrees(az_initial):.3f}°, cost={initial_cost:.3f}")
+    print(f"  Optimal: origin=({ox_opt:.3f}, {oy_opt:.3f}), Az={az_deg_opt:.3f}°, cost={result.fun:.3f}")
+    print(f"  Improvement: {((initial_cost - result.fun) / initial_cost * 100):.1f}%, Success: {result.success}")
+    
     return az_deg_opt, ox_opt, oy_opt
-# Duplicate legacy implementation removed; use typed `compute_world_axes_from_markers` above.

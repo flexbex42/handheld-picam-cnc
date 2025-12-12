@@ -156,7 +156,7 @@ def save_current_camera_settings(saved_settings, camera_id, camera_index, curren
             print(f"  Resolution: {existing_settings.get('resolution')} → {current_resolution} (changed: {resolution_changed})")
             print(f"  FPS: {existing_settings.get('fps')} → {int(current_fps)} (changed: {fps_changed})")
     else:
-        calibration_data = existing_settings.get('calibration', {})
+        calibration_data = existing_settings.get('intrinsic', {})
         if calibration_data:
             print(f"[LOG] Device number changed, but calibration data preserved")
 
@@ -165,7 +165,7 @@ def save_current_camera_settings(saved_settings, camera_id, camera_index, curren
         'format': current_format,
         'resolution': current_resolution,
         'fps': int(current_fps),
-        'calibration': calibration_data
+        'intrinsic': calibration_data
     }
 
     # Ensure active_camera in this in-memory dict matches the runtime selection
@@ -194,10 +194,47 @@ def get_active_camera_settings():
     return settings.get(_ACTIVE_CAMERA_ID, {})
 
 # Used in caliPerspective.py, camera.py, caliDevice.py (get calibration for a specific camera)
-def get_camera_calibration(camera_id):
+def get_camera_intrinsic_parameter(camera_id):
     """Return the calibration dict for the given camera_id from the app settings file, or an empty dict if not found."""
     if camera_id is None:
         camera_id=get_active_camera()
     settings = get_app_settings()
     camera_settings = settings.get(camera_id, {})
-    return camera_settings.get('calibration', {})
+    return camera_settings.get('intrinsic', {})
+
+
+def set_active_cam_settings(cam_settings: dict) -> bool:
+    """Save the provided `cam_settings` dict under the currently active camera id.
+
+    This will merge the provided dictionary into any existing settings for the
+    active camera and persist the overall app settings file. Returns True on
+    success, False on failure (or if no active camera is selected).
+    """
+    global _ACTIVE_CAMERA_ID, _ACTIVE_CAMERA_INDEX
+    if _ACTIVE_CAMERA_ID is None:
+        print("[ERROR] No active camera selected; cannot save camera settings")
+        return False
+    try:
+        settings = get_app_settings()
+        existing = settings.get(_ACTIVE_CAMERA_ID, {})
+        # Merge shallow keys from cam_settings into existing settings
+        merged = existing.copy()
+        merged.update(cam_settings or {})
+        # Ensure device index is preserved if not provided
+        if 'device' not in merged and _ACTIVE_CAMERA_INDEX is not None:
+            merged['device'] = _ACTIVE_CAMERA_INDEX
+        settings[_ACTIVE_CAMERA_ID] = merged
+        # Ensure active_camera entry is present and consistent
+        try:
+            settings['active_camera'] = {'id': _ACTIVE_CAMERA_ID, 'device': merged.get('device', _ACTIVE_CAMERA_INDEX)}
+        except Exception:
+            pass
+        result = save_camera_settings(settings)
+        if result:
+            print(f"[LOG] Saved settings for active camera {_ACTIVE_CAMERA_ID}")
+        else:
+            print(f"[ERROR] Failed to persist settings for {_ACTIVE_CAMERA_ID}")
+        return bool(result)
+    except Exception as e:
+        print(f"[ERROR] Could not save active camera settings: {e}")
+        return False

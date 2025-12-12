@@ -1,65 +1,9 @@
-def compute_world_axes_from_markers(markers, scale_mm_per_pixel=1.0):
-    """
-    Given four marker lines (xt, xb, yl, yr) as lists of points in camera pixel coordinates,
-    compute the world axes (Xw, Yw), Az (rotation around z), and (xo, yo) offset in mm.
-    Markers: dict with keys 'xt', 'xb', 'yl', 'yr', each value is a list of (xc, yc) points.
-    The image origin (0,0) is at the image center.
-    scale_mm_per_pixel: conversion factor from pixels to mm.
-    Returns: Az (deg), xo (mm), yo (mm)
-    """
-    import numpy as np
 
-    # Convert marker lists to arrays
-    xt = np.array(markers['xt'], dtype=np.float64)
-    xb = np.array(markers['xb'], dtype=np.float64)
-    yl = np.array(markers['yl'], dtype=np.float64)
-    yr = np.array(markers['yr'], dtype=np.float64)
-
-    # Optionally, get image shape from markers if available (for center origin)
-    # Here, assume user has already centered coordinates, or pass image_shape as argument if needed
-
-    # Fit lines (least squares) to each marker set: y = m*x + b
-    def fit_line(points):
-        x = points[:,0]
-        y = points[:,1]
-        A = np.vstack([x, np.ones_like(x)]).T
-        m, b = np.linalg.lstsq(A, y, rcond=None)[0]
-        return m, b
-
-    # Fit lines to xt and xb
-    m_xt, b_xt = fit_line(xt)
-    m_xb, b_xb = fit_line(xb)
-
-    # Xw is horizontal, y = (b_xt + b_xb)/2, m = (m_xt + m_xb)/2 (should be ~0)
-    m_xw = (m_xt + m_xb) / 2
-    b_xw = (b_xt + b_xb) / 2
-
-    # For yl and yr, get mean x for each (vertical lines)
-    yl_x_mean = np.mean(yl[:,0])
-    yr_x_mean = np.mean(yr[:,0])
-    # Yw is the vertical line at x = (yl_x_mean + yr_x_mean)/2
-    yw_x = (yl_x_mean + yr_x_mean) / 2
-
-    # The origin is the intersection of Xw and Yw
-    # Xw: y = m_xw * x + b_xw
-    # Yw: x = yw_x
-    # So origin = (yw_x, m_xw * yw_x + b_xw)
-    origin_x = yw_x
-    origin_y = m_xw * yw_x + b_xw
-    origin = np.array([origin_x, origin_y])
-
-    # Azimuth: angle between camera X axis and Xw (should be ~0 for horizontal)
-    Az_rad = np.arctan2(m_xw, 1.0)  # tan(theta) = m_xw
-    Az = np.degrees(Az_rad)
-
-    # Offset from image center (origin is in pixel coordinates, with (0,0) at center)
-    xo = origin[0] * scale_mm_per_pixel
-    yo = origin[1] * scale_mm_per_pixel
-
-    return Az, xo, yo
 
 import appSettings
-
+import cv2
+import numpy as np
+import os
 """
 rectificationHelper.py
 Centralized image rectification helpers for calibration windows.
@@ -72,9 +16,7 @@ Centralized image rectification helpers for calibration windows.
 
 All functions are pure and reusable, with no UI dependencies.
 """
-import cv2
-import numpy as np
-import os
+
 
 
 

@@ -22,14 +22,14 @@ import camera
 
 
 
-class SettingsWindow(QMainWindow):
+class CalibrationDeviceWindow(QMainWindow):
     """Settings Window mit Logik"""
-    
-    def __init__(self, parent=None, on_back_callback=None):
+
+    def __init__(self, parent=None, on_exit_callback=None):
         super().__init__(parent)
-        
-        # Callback für Zurück-Button
-        self.on_back_callback = on_back_callback
+
+        # Callback für Zurück/Exit
+        self.on_exit_callback = on_exit_callback
         
         # Setup UI
         self.ui = Ui_SettingsWindow()
@@ -377,32 +377,32 @@ class SettingsWindow(QMainWindow):
         if not available:
             available.append("No cameras detected")
         return available
-
+    
     def setup_tree_view(self):
-        """Erstelle TreeView Struktur"""
+        """Erzeuge und fülle die TreeView mit Standard-Items"""
         # Clear existing items
         self.ui.tvSettings.clear()
-        
+
         # Styling wird jetzt über styles.qss gesteuert
-        
+
         # Setze Item-Höhe einheitlich
         self.ui.tvSettings.setUniformRowHeights(True)
-        
+
         # Aktiviere Expand on Click für Parent-Items
         self.ui.tvSettings.setExpandsOnDoubleClick(False)  # Nicht bei Doppelklick
-        
+
         # Device (Camera) - am Anfang expanded
         self.device_item = QTreeWidgetItem(self.ui.tvSettings, ["📷 Device"])
         self.device_item.setExpanded(True)
         self.set_item_height(self.device_item)
-        
+
         # Lade verfügbare Kameras
         cameras = self.get_human_readable_cameras()
         for camera_name in cameras:
             camera_child = QTreeWidgetItem(self.device_item, [camera_name])
             camera_child.setData(0, Qt.UserRole, "device")  # Tag für Identifikation
             self.set_item_height(camera_child)
-        
+
         # Resolution - am Anfang collapsed und disabled
         self.resolution_item = QTreeWidgetItem(self.ui.tvSettings, ["📐 Resolution"])
         self.resolution_item.setExpanded(False)
@@ -413,7 +413,7 @@ class SettingsWindow(QMainWindow):
             res_child = QTreeWidgetItem(self.resolution_item, [res])
             res_child.setData(0, Qt.UserRole, "resolution")
             self.set_item_height(res_child)
-        
+
         # FPS - am Anfang collapsed und disabled
         self.fps_item = QTreeWidgetItem(self.ui.tvSettings, ["🎬 FPS"])
         self.fps_item.setExpanded(False)
@@ -424,7 +424,7 @@ class SettingsWindow(QMainWindow):
             fps_child = QTreeWidgetItem(self.fps_item, [fps])
             fps_child.setData(0, Qt.UserRole, "fps")
             self.set_item_height(fps_child)
-        
+
         # Format - am Anfang collapsed und disabled
         self.format_item = QTreeWidgetItem(self.ui.tvSettings, ["🎨 Format"])
         self.format_item.setExpanded(False)
@@ -435,7 +435,7 @@ class SettingsWindow(QMainWindow):
             fmt_child = QTreeWidgetItem(self.format_item, [fmt])
             fmt_child.setData(0, Qt.UserRole, "format")
             self.set_item_height(fmt_child)
-        
+
         print("[LOG] TreeView setup complete")
         
     
@@ -513,8 +513,8 @@ class SettingsWindow(QMainWindow):
             print(f"[LOG] Restored previous camera selection: index={self.previous_selected_index}, id={self.previous_selected_id}")
         # Stoppe Kamera vor dem Verlassen
         self.stop_camera()
-        if self.on_back_callback:
-            self.on_back_callback()
+        if self.on_exit_callback:
+            self.on_exit_callback()
 
     def on_ok_clicked(self):
         """bOk: Übernimm temporäre Auswahl global und speichere in JSON"""
@@ -528,8 +528,8 @@ class SettingsWindow(QMainWindow):
             # active_camera is now persisted via set_selected_camera; no legacy selected_camera entry
         # Stoppe Kamera vor dem Verlassen
         self.stop_camera()
-        if self.on_back_callback:
-            self.on_back_callback()
+        if self.on_exit_callback:
+            self.on_exit_callback()
 
     def save_current_camera_settings(self):
         """Delegate camera settings save to appSettings.save_current_camera_settings."""

@@ -15,14 +15,14 @@ print('Pattern to try:', pattern)
 # find a camera entry with geometric if any
 cam_entry = None
 for k,v in settings.items():
-    if isinstance(v, dict) and 'calibration' in v and 'geometric' in v['calibration']:
+    if isinstance(v, dict) and 'intrinsic' in v and 'geometric' in v['intrinsic']:
         cam_entry = v
         break
 
 camera_matrix = None
 dist_coeffs = None
 if cam_entry:
-    geom = cam_entry['calibration']['geometric']
+    geom = cam_entry['intrinsic']['geometric']
     if 'camera_matrix' in geom and 'dist_coeffs' in geom:
         camera_matrix = np.array(geom['camera_matrix'],dtype=np.float64)
         dist_coeffs = np.array(geom['dist_coeffs'],dtype=np.float64).reshape(-1)

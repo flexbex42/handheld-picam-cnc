@@ -14,7 +14,7 @@ from PyQt5.QtCore import Qt
 
 # Importiere die auto-generierten UIs
 from mainWin import Ui_MainWindow
-from caliDevice import SettingsWindow
+
 import appSettings
 import camera
 from caliSelect import CalibrationSelectWindow
@@ -95,7 +95,7 @@ class MainApp(QMainWindow):
             camera_id, device_number = result
             display_name = camera_id.split('_')[0] if '_' in camera_id else camera_id[:15]
             camera_settings = saved_settings.get(camera_id, {})
-            calibration_data = camera_settings.get("calibration", {})
+            calibration_data = camera_settings.get("intrinsic", {})
             has_geometric = "geometric" in calibration_data and calibration_data["geometric"]
             has_scale = "scale" in calibration_data and calibration_data["scale"]
             has_offset = "offset" in calibration_data and calibration_data["offset"]
@@ -156,24 +156,16 @@ class MainApp(QMainWindow):
         # Diese Methode wird nicht mehr benötigt
         pass
         
-    def show_settings_view(self):
-        """Zeige Settings View im gleichen Fenster"""
-        # Erstelle Settings Window und übernehme dessen UI
-        self.settings_window = SettingsWindow(self, on_back_callback=self.show_calibration_select_view)
-        
-        # Kopiere das Central Widget vom Settings Window
-        self.setCentralWidget(self.settings_window.centralWidget())
-        self.setMenuBar(self.settings_window.menuBar())
-        self.setStatusBar(self.settings_window.statusBar())
-        self.setWindowTitle(self.settings_window.windowTitle())
+
     
     def show_calibration_select_view(self):
+        print("[DEBUG] main: show_calibration_select_view called")
         """Zeige Calibration Select View im gleichen Fenster"""
         # Erstelle Calibration Select Window (ist ein QWidget, kein QMainWindow)
         self.calibration_select_window = CalibrationSelectWindow(
             self, 
             on_back_callback=self.show_main_view,
-            on_settings_callback=self.show_settings_view,
+            on_settings_callback=self.show_calibration_device_view,
             on_distortion_callback=self.show_distortion_calibration_view,
             on_perspective_callback=self.show_perspective_calibration_view,
             on_offset_callback=self.show_offset_calibration_view
@@ -183,16 +175,25 @@ class MainApp(QMainWindow):
         self.setCentralWidget(self.calibration_select_window)
         self.setWindowTitle("Calibration Select")
     
+    def show_calibration_device_view(self):
+        from caliDevice import CalibrationDeviceWindow
+        """Zeige Settings View im gleichen Fenster"""
+
+        # Erstelle Settings Window und übernehme dessen UI
+        settings_window = CalibrationDeviceWindow()
+        settings_window.on_exit_callback = self.show_calibration_select_view
+        # Setze das Widget als Central Widget
+        self.setCentralWidget(self.settings_window.centralWidget())
+        self.setWindowTitle(self.settings_window.windowTitle())
+
+
     def show_distortion_calibration_view(self):
         """Zeige Distortion Calibration View im gleichen Fenster"""
         from caliDistortion import CalibrationDistortionWindow
         
         # Erstelle Distortion Calibration Window
-        distortion_window = CalibrationDistortionWindow(
-            self,
-            on_back_callback=self.show_calibration_select_view
-        )
-        
+        distortion_window = CalibrationDistortionWindow()
+        distortion_window.on_exit_callback = self.show_calibration_select_view
         # Setze das Widget als Central Widget
         self.setCentralWidget(distortion_window)
         self.setWindowTitle("Distortion Calibration")
@@ -204,8 +205,6 @@ class MainApp(QMainWindow):
         # Erstelle Perspective Calibration Window
         perspective_window = CalibrationPerspectiveWindow()
         perspective_window.on_exit_callback = self.show_calibration_select_view
-        # Don't set on_perspective_complete_callback - it would access deleted UI
-        
         # Setze das Widget als Central Widget
         self.setCentralWidget(perspective_window)
         self.setWindowTitle("Perspective Calibration")
@@ -215,22 +214,10 @@ class MainApp(QMainWindow):
         from caliOffset import CalibrationOffsetWindow
         
         # Erstelle Offset Calibration Window
-        offset_window = CalibrationOffsetWindow(
-            self,
-            on_back_callback=self.show_calibration_select_view
-        )
-        
+        offset_window = CalibrationOffsetWindow()
+        offset_window.on_exit_callback=self.show_calibration_select_view
         # Setze das Widget als Central Widget
         self.setCentralWidget(offset_window)
-        
-        # Entferne ALLE Margins und Spacing
-        self.setContentsMargins(0, 0, 0, 0)
-        if self.centralWidget():
-            self.centralWidget().setContentsMargins(0, 0, 0, 0)
-        if self.layout():
-            self.layout().setContentsMargins(0, 0, 0, 0)
-            self.layout().setSpacing(0)
-        
         self.setWindowTitle("Offset Calibration")
         
     def on_camera_setup_clicked(self):

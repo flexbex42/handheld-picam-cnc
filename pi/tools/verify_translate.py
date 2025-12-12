@@ -16,8 +16,8 @@ selected = data.get('selected_camera')
 print(f"Selected camera: {selected}")
 
 cam = data.get(selected, {})
-pers = cam.get('calibration', {}).get('perspective', {})
-geom = cam.get('calibration', {}).get('geometric', {})
+pers = cam.get('intrinsic', {}).get('perspective', {})
+geom = cam.get('intrinsic', {}).get('geometric', {})
 
 # Read stored values (already in the convention used by caliOffset)
 stored_pitch = pers.get('pitch_deg')

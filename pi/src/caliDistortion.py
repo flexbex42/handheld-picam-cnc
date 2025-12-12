@@ -67,9 +67,9 @@ class CalibrationDistortionWindow(QWidget):
     
     def __init__(self, parent=None, on_back_callback=None):
         super().__init__(parent)
-        
         # Callbacks
         self.on_back_callback = on_back_callback
+        self.on_exit_callback = on_back_callback
         
         # Setup UI
         self.ui = Ui_CalibrationDistortionWindow()
@@ -429,8 +429,8 @@ class CalibrationDistortionWindow(QWidget):
         self.cleanup_camera()
         
         # Gehe zurück
-        if self.on_back_callback:
-            self.on_back_callback()
+        if hasattr(self, 'on_exit_callback') and self.on_exit_callback:
+            self.on_exit_callback()
             
     def cleanup_camera(self):
         """Schließe Kamera und Timer"""

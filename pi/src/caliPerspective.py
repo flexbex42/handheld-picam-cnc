@@ -130,10 +130,10 @@ class CalibrationPerspectiveWindow(QWidget):
             camera_id = active_camera.get('id', None)
             if camera_id and camera_id in settings:
                 cam_settings = settings[camera_id]
-                calibration = cam_settings.setdefault('calibration', {})
-                calibration['roll_deg'] = float(roll)
-                calibration['pitch_deg'] = float(pitch)
-                calibration['scale_mm_per_pixel'] = float(scale)
+                intrinsic = cam_settings.setdefault('intrinsic', {})
+                intrinsic['roll_deg'] = float(roll)
+                intrinsic['pitch_deg'] = float(pitch)
+                intrinsic['scale_mm_per_pixel'] = float(scale)
                 settings[camera_id] = cam_settings
                 appSettings.save_camera_settings(settings)
         self.on_cancel_clicked()
@@ -158,7 +158,7 @@ class CalibrationPerspectiveWindow(QWidget):
         self.cleanup()
         if hasattr(self, 'on_exit_callback') and self.on_exit_callback:
             self.on_exit_callback()
-        self.close()
+        #self.close()
 
     def cleanup_camera(self):
         if hasattr(self, 'camera') and self.camera:

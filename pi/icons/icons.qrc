@@ -15,5 +15,6 @@
         <file>minus.png</file>
         <file>undo.png</file>
         <file>freeze.png</file>
+        <file>continue.png</file>
     </qresource>
 </RCC>

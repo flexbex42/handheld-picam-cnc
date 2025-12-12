@@ -56,7 +56,7 @@ if successful < 3:
 # use geometric from selected camera if available
 selected = settings.get('selected_camera')
 cam = settings.get(selected, {})
-geom = cam.get('calibration',{}).get('geometric',{})
+geom = cam.get('intrinsic',{}).get('geometric',{})
 if not geom or 'camera_matrix' not in geom:
     print('no camera matrix available, abort')
     raise SystemExit(1)

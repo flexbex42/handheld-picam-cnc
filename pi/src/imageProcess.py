@@ -21,8 +21,8 @@ def undistort_image(camera_id, image):
     Returns the undistorted image.
     """
     cam_settings = appSettings.get_camera_settings(camera_id)
-    calibration = cam_settings.get('calibration', {})
-    geom = calibration.get('geometric', {})
+    intrinsic = cam_settings.get('intrinsic', {})
+    geom = intrinsic.get('geometric', {})
     camera_matrix = np.array(geom.get('camera_matrix'), dtype=np.float32)
     dist_coeffs = np.array(geom.get('dist_coeffs'), dtype=np.float32)
     # Only reshape/flatten if needed

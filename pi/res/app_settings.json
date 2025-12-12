@@ -4,7 +4,7 @@
         "format": "MJPG",
         "resolution": "640x480",
         "fps": 30,
-        "calibration": {
+        "intrinsic": {
             "geometric": {
                 "camera_matrix": [
                     [
@@ -42,6 +42,11 @@
                 "translate_x": 0,
                 "translate_y": 65
             }
+        },
+        "extrinsic": {
+            "tx": 0.0,
+            "ty": 0.0,
+            "az": 0.0
         }
     },
     "calibration_settings": {
@@ -65,7 +70,7 @@
         "format": "YUYV",
         "resolution": "640x480",
         "fps": 30,
-        "calibration": {
+        "intrinsic": {
             "geometric": {
                 "camera_matrix": [
                     [
@@ -103,6 +108,11 @@
                 "translate_x": 0,
                 "translate_y": 0
             }
+        },
+        "extrinsic": {
+            "tx": -70.375,
+            "ty": 25.238732588998793,
+            "az": -15.44719816272847
         }
     },
     "active_camera": {

@@ -26,8 +26,8 @@ if cam is None:
     print('Selected camera', selected, 'not found')
     raise SystemExit(1)
 
-pers = cam.get('calibration', {}).get('perspective', {})
-geom = cam.get('calibration', {}).get('geometric', {})
+pers = cam.get('intrinsic', {}).get('perspective', {})
+geom = cam.get('intrinsic', {}).get('geometric', {})
 
 tilt_deg = pers.get('tilt_deg')
 yaw_deg = pers.get('yaw_deg')

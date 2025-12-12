@@ -80,7 +80,7 @@ class CalibrationSelectWindow(QWidget):
             camera_id, device_number = result
             display_name = camera_id.split('_')[0] if '_' in camera_id else camera_id[:15]
             camera_settings = saved_settings.get(camera_id, {})
-            calibration_data = camera_settings.get("calibration", {})
+            calibration_data = camera_settings.get("intrinsic", {})
             camera_with_settings = camera_id in saved_settings
             # Fall 2/3: Kamera gefunden
             if not camera_with_settings:

@@ -35,83 +35,6 @@
     </size>
    </property>
   </widget>
-  <widget class="QPushButton" name="bZoomIn">
-   <property name="geometry">
-    <rect>
-     <x>550</x>
-     <y>250</y>
-     <width>64</width>
-     <height>64</height>
-    </rect>
-   </property>
-   <property name="minimumSize">
-    <size>
-     <width>64</width>
-     <height>64</height>
-    </size>
-   </property>
-   <property name="maximumSize">
-    <size>
-     <width>64</width>
-     <height>64</height>
-    </size>
-   </property>
-   <property name="styleSheet">
-    <string notr="true">QPushButton { background-color: transparent; border: none; }</string>
-   </property>
-   <property name="text">
-    <string/>
-   </property>
-   <property name="icon">
-    <iconset resource="../icons/icons.qrc">
-     <normaloff>:/icons/plus.png</normaloff>:/icons/plus.png</iconset>
-   </property>
-   <property name="iconSize">
-    <size>
-     <width>56</width>
-     <height>56</height>
-    </size>
-   </property>
-  </widget>
-  <widget class="QPushButton" name="bZoomOut">
-   <property name="geometry">
-    <rect>
-     <x>550</x>
-     <y>340</y>
-     <width>64</width>
-     <height>64</height>
-    </rect>
-   </property>
-   <property name="minimumSize">
-    <size>
-     <width>64</width>
-     <height>64</height>
-    </size>
-   </property>
-   <property name="maximumSize">
-    <size>
-     <width>64</width>
-     <height>64</height>
-    </size>
-   </property>
-   <property name="styleSheet">
-    <string notr="true">QPushButton { background-color: transparent; border: none; }</string>
-   </property>
-   <property name="text">
-    <string/>
-   </property>
-   <property name="icon">
-    <iconset resource="../icons/icons.qrc">
-     <normaloff>:/icons/minus.png</normaloff>
-     <normalon>:/icons/offsetYRA.png</normalon>:/icons/minus.png</iconset>
-   </property>
-   <property name="iconSize">
-    <size>
-     <width>56</width>
-     <height>56</height>
-    </size>
-   </property>
-  </widget>
   <widget class="QPushButton" name="bDecline">
    <property name="geometry">
     <rect>
@@ -226,6 +149,9 @@
      <height>56</height>
     </size>
    </property>
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
   </widget>
   <widget class="QPushButton" name="bXT">
    <property name="geometry">
@@ -264,6 +190,9 @@
      <width>56</width>
      <height>56</height>
     </size>
+   </property>
+   <property name="checkable">
+    <bool>true</bool>
    </property>
   </widget>
   <widget class="QPushButton" name="bYR">
@@ -304,6 +233,9 @@
      <height>56</height>
     </size>
    </property>
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
   </widget>
   <widget class="QPushButton" name="bYL">
    <property name="geometry">
@@ -327,7 +259,7 @@
     </size>
    </property>
    <property name="styleSheet">
-    <string notr="true"/>
+    <string notr="true">QPushButton { background-color: transparent; border: none; }</string>
    </property>
    <property name="text">
     <string/>
@@ -335,8 +267,7 @@
    <property name="icon">
     <iconset resource="../icons/icons.qrc">
      <normaloff>:/icons/offsetYL.png</normaloff>
-     <normalon>:/icons/offsetYLA.png</normalon>
-     <activeon>:/icons/offsetYLA.png</activeon>:/icons/offsetYL.png</iconset>
+     <normalon>:/icons/offsetYLA.png</normalon>:/icons/offsetYL.png</iconset>
    </property>
    <property name="iconSize">
     <size>
@@ -344,8 +275,11 @@
      <height>56</height>
     </size>
    </property>
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
   </widget>
-  <widget class="QPushButton" name="bSampel">
+  <widget class="QPushButton" name="bSample">
    <property name="geometry">
     <rect>
      <x>546</x>
@@ -381,6 +315,9 @@
      <width>56</width>
      <height>56</height>
     </size>
+   </property>
+   <property name="checkable">
+    <bool>true</bool>
    </property>
   </widget>
   <widget class="QWidget" name="layoutWidget">
@@ -537,6 +474,47 @@
      </widget>
     </item>
    </layout>
+  </widget>
+  <widget class="QPushButton" name="bContinue">
+   <property name="geometry">
+    <rect>
+     <x>546</x>
+     <y>230</y>
+     <width>64</width>
+     <height>64</height>
+    </rect>
+   </property>
+   <property name="minimumSize">
+    <size>
+     <width>64</width>
+     <height>64</height>
+    </size>
+   </property>
+   <property name="maximumSize">
+    <size>
+     <width>64</width>
+     <height>64</height>
+    </size>
+   </property>
+   <property name="styleSheet">
+    <string notr="true">QPushButton { background-color: transparent; border: none; }</string>
+   </property>
+   <property name="text">
+    <string/>
+   </property>
+   <property name="icon">
+    <iconset resource="../icons/icons.qrc">
+     <normaloff>:/icons/continue.png</normaloff>:/icons/continue.png</iconset>
+   </property>
+   <property name="iconSize">
+    <size>
+     <width>56</width>
+     <height>56</height>
+    </size>
+   </property>
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
   </widget>
  </widget>
  <resources>

@@ -14,8 +14,8 @@ with open(SETTINGS, 'r') as f:
 
 selected = data.get('selected_camera')
 cam = data.get(selected, {})
-pers = cam.get('calibration', {}).get('perspective', {})
-geom = cam.get('calibration', {}).get('geometric', {})
+pers = cam.get('intrinsic', {}).get('perspective', {})
+geom = cam.get('intrinsic', {}).get('geometric', {})
 
 stored_tilt = pers.get('tilt_deg')
 stored_yaw = pers.get('yaw_deg')

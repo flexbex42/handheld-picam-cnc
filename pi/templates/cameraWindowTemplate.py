@@ -9,15 +9,20 @@ Minimal Perspective Calibration GUI
 from PyQt5.QtWidgets import QWidget, QApplication, QGraphicsScene, QDialog
 from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtGui import QImage, QPixmap, QIcon
-from caliPerspectiveWin import Ui_Form as Ui_CalibrationPerspectiveWindow
+#TODO insert correct import below
+from caliXXXWin import Ui_Form
 import appSettings
 import camera
 import sys
 import cv2
-class CalibrationPerspectiveWindow(QWidget):
-    def __init__(self):
-        super().__init__()
-        self.ui = Ui_CalibrationPerspectiveWindow()
+
+#TODO insert correct class name below
+class CalibrationXXXWindow(QWidget):
+    def __init__(self, parent=None, on_back_callback=None):
+        super().__init__(parent)
+        self.on_back_callback = on_back_callback
+        self.on_exit_callback = on_back_callback
+        self.ui = Ui_Form()
         self.ui.setupUi(self)
         self.scene = QGraphicsScene()
         self.ui.gvCamera.setScene(self.scene)
@@ -98,6 +103,7 @@ class CalibrationPerspectiveWindow(QWidget):
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
-    window = CalibrationPerspectiveWindow()
+    #TODO insert correct class name below
+    window = XXXCalibrationPerspectiveWindow()
     window.show()
     sys.exit(app.exec_())

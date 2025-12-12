@@ -14,8 +14,8 @@ if not selected:
     raise SystemExit(1)
 
 cam = data.get(selected, {})
-pers = cam.get('calibration', {}).get('perspective', {})
-geom = cam.get('calibration', {}).get('geometric', {})
+pers = cam.get('intrinsic', {}).get('perspective', {})
+geom = cam.get('intrinsic', {}).get('geometric', {})
 
 if not pers:
     print('No perspective block for selected camera')
@@ -87,12 +87,12 @@ if cam_mat is not None and pitch_deg is not None and roll_deg is not None:
 print('Computed translate_x, translate_y:', translate_x, translate_y)
 
 # write back
-if 'calibration' not in cam:
-    cam['calibration'] = {}
-if 'perspective' not in cam['calibration']:
-    cam['calibration']['perspective'] = {}
-cam['calibration']['perspective']['translate_x'] = int(translate_x)
-cam['calibration']['perspective']['translate_y'] = int(translate_y)
+if 'intrinsic' not in cam:
+    cam['intrinsic'] = {}
+if 'perspective' not in cam['intrinsic']:
+    cam['intrinsic']['perspective'] = {}
+cam['intrinsic']['perspective']['translate_x'] = int(translate_x)
+cam['intrinsic']['perspective']['translate_y'] = int(translate_y)
 
 with open(SETTINGS,'w') as f:
     json.dump(data, f, indent=4)

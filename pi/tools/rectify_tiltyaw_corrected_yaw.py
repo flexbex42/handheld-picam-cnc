@@ -156,8 +156,8 @@ def main():
 
     selected = data.get('selected_camera')
     cam = data.get(selected, {})
-    pers = cam.get('calibration', {}).get('perspective', {})
-    geom = cam.get('calibration', {}).get('geometric', {})
+    pers = cam.get('intrinsic', {}).get('perspective', {})
+    geom = cam.get('intrinsic', {}).get('geometric', {})
 
     tilt_default = pers.get('tilt_deg')
     yaw_default = pers.get('yaw_deg')

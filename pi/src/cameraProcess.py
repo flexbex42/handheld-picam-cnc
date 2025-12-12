@@ -24,8 +24,8 @@ def rot_scale(image):
     objp *= square_size
     # Get camera matrix and distortion from active camera
     cam_settings = appSettings.get_active_camera_settings()
-    calibration = cam_settings.get('calibration', {})
-    geom = calibration.get('geometric', {})
+    intrinsic = cam_settings.get('intrinsic', {})
+    geom = intrinsic.get('geometric', {})
     camera_matrix = np.array(geom.get('camera_matrix'))
     dist_coeffs = np.array(geom.get('dist_coeffs'))
     # Solve for pose
